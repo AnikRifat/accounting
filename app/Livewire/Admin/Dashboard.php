@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 /**
- * Accounting overview for the header company context: one company, or every visible company combined. Figures follow the viewer's abilities:
+ * Accounting dashboard for the header company context: one company, or every visible company combined. Figures follow the viewer's abilities:
  * income, expense and dues need `entries.view`, payment method balances `accounts.view`, the head count `users.view`.
  */
 class Dashboard extends Component

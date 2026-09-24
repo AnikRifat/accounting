@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     @if(! $hasCompanies)
-        <x-page-header :title="__('Overview')" />
+        <x-page-header :title="__('Dashboard')" />
         <x-card>
             @can('companies.create')
                 <x-empty-state emoji="🏢" :title="__('Create your first company')" :description="__('Each company gets its own chart of accounts, cash and bank accounts and parties. Add one to start recording income and expenses.')">
@@ -12,7 +12,7 @@
             @endcan
         </x-card>
     @else
-        <x-page-header :title="__('Overview')" :description="$scopeLabel.' · '.__('Posted entries only; voided entries never count.')" />
+        <x-page-header :title="__('Dashboard')" :description="$scopeLabel.' · '.__('Posted entries only; voided entries never count.')" />
 
         @can('entries.create')
             <div class="quick-actions">

@@ -3,7 +3,7 @@
     $user = auth()->user();
     $navSections = collect([
         '' => [
-            'dashboard' => ['dashboard.view', __('Overview'), '🏠'],
+            'dashboard' => ['dashboard.view', __('Dashboard'), '🏠'],
         ],
         __('Accounting') => [
             'entries.index' => ['entries.view', __('Transactions'), '💸'],

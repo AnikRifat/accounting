@@ -11,7 +11,8 @@ Laravel 13, Livewire 4 (class components in `app/Livewire`, `layouts.admin` / `l
 form controls via `x-form.*`), Tailwind 4 via Vite, PHPUnit. Started from the house starter's
 backend (`~/Development/boilarplate`), without its Next.js frontend. Production target is **cPanel
 shared hosting with MySQL/MariaDB**: no Node, queue worker or long-running process at runtime, so
-assets are built before upload. Local development defaults to SQLite, and the code must stay
+assets are built before upload. **Dokploy** (Docker) is also supported via the root `Dockerfile`
+(single replica, migrations on container start, `storage/app` on a volume; see README). Local development defaults to SQLite, and the code must stay
 portable (no DB-specific SQL; MySQL runs with `ONLY_FULL_GROUP_BY`). Timezone `Asia/Dhaka`; MySQL
 session timezone `+06:00`.
 

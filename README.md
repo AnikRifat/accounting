@@ -75,6 +75,52 @@ composer check     # Pint formatting + full test suite (in-memory SQLite)
 npm run build      # production CSS/JS into public/build
 ```
 
+## Deploying on Dokploy
+
+The repository ships a `Dockerfile` (assets built with Node in a build stage, served by
+`serversideup/php` nginx + PHP-FPM on port 8080). On every container start it waits for the
+database, runs pending migrations, links storage and caches config, routes, views and events.
+
+1. **Database**: in the Dokploy project, create a **MySQL 8** database. Note its internal host,
+   database name, user and password.
+2. **Application**: create an Application from this Git repository, branch `main`,
+   Build Type **Dockerfile** (path `Dockerfile`).
+3. **Environment** (Environment tab). Generate the key once with `php artisan key:generate --show`:
+   ```ini
+   APP_NAME="Frish Accounts"
+   APP_ENV=production
+   APP_DEBUG=false
+   APP_KEY=base64:...
+   APP_URL=https://your-domain
+   TRUSTED_PROXIES=*
+   LOG_CHANNEL=stderr
+   LOG_LEVEL=error
+   DB_CONNECTION=mysql
+   DB_HOST=<internal host of the Dokploy database>
+   DB_PORT=3306
+   DB_DATABASE=...
+   DB_USERNAME=...
+   DB_PASSWORD=...
+   SESSION_DRIVER=database
+   SESSION_SECURE_COOKIE=true
+   CACHE_STORE=database
+   QUEUE_CONNECTION=sync
+   FILESYSTEM_DISK=local
+   MEDIA_DISK=local
+   ```
+4. **Storage** (Advanced → Mounts): add a **Volume** mount, e.g. `frish-storage`, at
+   `/var/www/html/storage/app`. Entry attachments live there. Without it they are lost on every deploy.
+5. **Domain** (Domains tab): add the domain with **container port 8080** and HTTPS (Let's Encrypt).
+6. **Deploy**, then create the owner once from the application's Terminal:
+   `php artisan app:create-admin`.
+7. **Scheduler** (optional, only prunes expired API tokens): Schedules tab, daily,
+   command `php artisan sanctum:prune-expired --hours=24`.
+8. **Backups**: these are the company's books. On the database, add a daily backup to an S3
+   destination and test a restore. Back up the `frish-storage` volume too.
+
+Keep the application at one replica: migrations run on start and uploads sit on a local volume.
+Never run `migrate:fresh` or `db:seed` against the production database.
+
 ## Preparing a cPanel deployment
 
 The target is cPanel shared hosting with MySQL or MariaDB. Nothing needs Node, a queue worker or a
