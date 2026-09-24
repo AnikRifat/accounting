@@ -38,7 +38,7 @@ class DashboardTest extends TestCase
         foreach (['owner', 'administrator', 'accountant', 'data-entry'] as $role) {
             $this->actingAs($this->user($role, $company))->get('/admin')->assertOk()
                 ->assertSee('Income this month')->assertSee('Cash position')->assertSee('bKash')->assertSee('Receivable (owed to us)')->assertSee('First receipt')
-                ->assertSee('href="'.route('admin.entries.create', 'income').'"', false);
+                ->assertSee('href="'.route('admin.entries.index', ['sheet' => 'create:income']).'"', false);
         }
     }
 

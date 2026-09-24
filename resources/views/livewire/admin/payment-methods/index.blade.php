@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Payment methods')" :description="__('Cash, bank and mobile banking accounts that receive or pay money, with their current balance.')">
-        @can('accounts.manage')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ __('Add payment method') }}</x-button></x-slot:actions> @endcan
+        @can('accounts.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.payment-methods.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Add payment method') }}</x-button></x-slot:actions> @endcan
     </x-page-header>
     @if(! $hasCompanies)
         <x-card><x-empty-state emoji="🔒" :title="__('No company yet')" :description="__('You are not assigned to any company yet.')" /></x-card>
@@ -24,7 +24,7 @@
                 </x-table>
             </x-card>
         @empty
-            <x-card><x-empty-state emoji="💳" :title="__('No payment methods yet.')" :description="__('Add the cash, bank and mobile banking accounts that receive or pay money.')">@can('accounts.manage')<x-button icon="plus" wire:click="openSheet('create')">{{ __('Add payment method') }}</x-button>@endcan</x-empty-state></x-card>
+            <x-card><x-empty-state emoji="💳" :title="__('No payment methods yet.')" :description="__('Add the cash, bank and mobile banking accounts that receive or pay money.')">@can('accounts.manage')<x-button icon="plus" :href="route('admin.payment-methods.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Add payment method') }}</x-button>@endcan</x-empty-state></x-card>
         @endforelse
         @if($showCompany && $groups->isNotEmpty())
             <div class="card table-footer"><span>{{ __('Grand total: :amount', ['amount' => \App\Support\Money::format($grandTotal)]) }}</span></div>

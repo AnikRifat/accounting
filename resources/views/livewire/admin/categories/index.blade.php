@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Categories')" :description="$isAll ? __('What money is earned from or spent on, combined across companies. Each company keeps its own categories.') : __('What money is earned from or spent on.')">
-        @can('accounts.manage')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ $isAll ? __('Add category to all companies') : __('Add category') }}</x-button></x-slot:actions> @endcan
+        @can('accounts.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.categories.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ $isAll ? __('Add category to all companies') : __('Add category') }}</x-button></x-slot:actions> @endcan
     </x-page-header>
     @if(! $hasCompanies)
         <x-card><x-empty-state emoji="🔒" :title="__('No company yet')" :description="__('You are not assigned to any company yet.')" /></x-card>

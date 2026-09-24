@@ -17,11 +17,10 @@
         @can('entries.create')
             <div class="quick-actions">
                 @foreach([
-                    'income' => ['💰', __('Record income'), __('Sales, fees and other money in')],
-                    'expense' => ['🧾', __('Record expense'), __('Bills, salaries and other money out')],
-                    'transfer' => ['🔁', __('Record transfer'), __('Move money between accounts')],
-                ] as $type => [$emoji, $label, $hint])
-                    <a class="card quick-action" href="{{ route('admin.entries.create', $type) }}" wire:navigate wire:key="quick-{{ $type }}"><span class="quick-action-emoji" aria-hidden="true">{{ $emoji }}</span><span><strong>{{ $label }}</strong><span class="muted">{{ $hint }}</span></span></a>
+                    'income' => ['💰', __('Record income'), __('Sales, fees and other money in'), 'success'],
+                    'expense' => ['🧾', __('Record expense'), __('Bills, salaries and other money out'), 'danger'],
+                ] as $type => [$emoji, $label, $hint, $tone])
+                    <a class="card quick-action quick-action-{{ $tone }}" href="{{ route('admin.entries.index', ['sheet' => 'create:'.$type]) }}" wire:navigate wire:key="quick-{{ $type }}"><span class="quick-action-emoji" aria-hidden="true">{{ $emoji }}</span><span><strong>{{ $label }}</strong><span class="muted">{{ $hint }}</span></span></a>
                 @endforeach
             </div>
         @endcan

@@ -7,7 +7,7 @@
         @if($settled > 0)<x-alert tone="warning">{{ __(':amount has already been settled against this entry, so its party is fixed and the unpaid part can\'t go below that amount.', ['amount' => \App\Support\Money::format($settled)]) }}</x-alert>@endif
         <x-card :title="__('Entry details')">
             <div class="form-grid">
-                <x-form.input name="entryDate" :label="__('Date')" type="date" wire:model="entryDate" required />
+                <x-form.date name="entryDate" :label="__('Date')" wire:model="entryDate" required />
                 @if($isBill)
                     <div class="stack-sm" wire:key="category-{{ $companyId }}">
                         <x-form.select name="categoryAccountId" :label="__('Category')" wire:model="categoryAccountId" :options="$categories" :autofocus="! $entryId" />
@@ -33,7 +33,7 @@
                     <x-form.input name="paidAmount" :label="$type === 'income' ? __('Received now (৳)') : __('Paid now (৳)')" wire:model.live.debounce.400ms="paidAmount" required inputmode="decimal" autocomplete="off" />
                     <div wire:key="method-{{ $companyId }}"><x-form.select name="paymentAccountId" :label="__('Payment method')" wire:model="paymentAccountId" :options="$methods" /></div>
                     @if($showDue)
-                        <x-form.input name="dueDate" :label="__('Due date for the rest')" type="date" wire:model="dueDate" required />
+                        <x-form.date name="dueDate" :label="__('Due date for the rest')" wire:model="dueDate" required />
                     @endif
                     @if($canChoosePayer)
                         <div wire:key="payer-{{ $companyId }}"><x-form.select name="paidBy" :label="$type === 'income' ? __('Received by') : __('Paid by')" wire:model="paidBy" :options="$payers" required :help="__('Who handed over or took the money.')" /></div>
@@ -49,8 +49,7 @@
                 <x-form.input name="reference" :label="__('Reference number')" wire:model="reference" maxlength="100" :help="__('Voucher, invoice or cheque number.')" />
                 <x-form.input name="description" :label="__('Description')" wire:model="description" maxlength="500" />
                 <div class="stack-sm span-full">
-                    <x-form.input name="referenceFile" :label="__('Voucher, invoice or receipt file')" type="file" wire:model="referenceFile" accept=".jpg,.jpeg,.png,.webp,.pdf" :help="__('Optional. JPG, PNG, WebP or PDF.')" />
-                    <p class="muted" wire:loading wire:target="referenceFile">{{ __('Uploading…') }}</p>
+                    <x-form.image name="referenceFile" :label="__('Voucher, invoice or receipt file')" accept="image/jpeg,image/png,image/webp,application/pdf" :help="__('Optional. JPG, PNG, WebP or PDF. Photos can be cropped before upload.')" />
                     @if($currentFile)
                         <div class="flex flex-wrap items-center gap-3">
                             <a class="text-link inline-flex items-center gap-1" href="{{ $currentFileUrl }}" target="_blank" rel="noopener"><x-icon name="external" width="14" height="14" />{{ $currentFile->filename }}</a>

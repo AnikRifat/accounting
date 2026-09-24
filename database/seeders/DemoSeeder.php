@@ -20,8 +20,9 @@ use Random\Randomizer;
 use RuntimeException;
 
 /**
- * Local demo data: 4 companies with about six months of bills (mostly paid, some on credit and settled later,
- * a few overdue), transfers and salaries, and three sign-ins sharing the fixed demo password `password`.
+ * Local demo data: 4 companies with about six months of income and expense bills (paid, plus a few due, partly paid
+ * and overdue) and salaries, and three sign-ins sharing the fixed demo password `password`. Transfers, opening
+ * balances, receipts and payments are left out for now.
  * Runs only in the local or testing environment and only on empty books (no company and no user),
  * so it can never touch real data or reset a password. Run with `composer demo` or `php artisan migrate:fresh --seed`.
  */
@@ -94,6 +95,14 @@ class DemoSeeder extends Seeder
 
     private CarbonImmutable $today;
 
+    /**
+     * Running balance per payment method, keyed by company id then method id. With no opening balances or transfers,
+     * expenses are paid from money that income brought in.
+     *
+     * @var array<int, array<int, int>>
+     */
+    private array $funds = [];
+
     /** The one demo password every seeded account signs in with. */
     private string $password;
 
@@ -112,7 +121,7 @@ class DemoSeeder extends Seeder
         $summary = DB::transaction(fn (): array => $this->seedDemo($password));
 
         $this->command?->info("Demo data created: {$summary['companies']} companies, {$summary['parties']} parties, {$summary['entries']} entries "
-            ."(2 voided), {$summary['open']} open bills ({$summary['overdue']} overdue), {$summary['settled']} bills with later receipts or payments.");
+            ."(2 voided), {$summary['open']} open bills ({$summary['overdue']} overdue).");
         $this->command?->line('Sign in at /admin/login with the demo password (local only):');
         $this->command?->line('  Owner       '.self::OWNER_EMAIL);
         $this->command?->line('  Accountant  '.self::ACCOUNTANT_EMAIL.' (Meghna Traders Ltd., Jamuna Soft Ltd.)');
@@ -120,7 +129,7 @@ class DemoSeeder extends Seeder
         $this->command?->line('  Password    '.$password);
     }
 
-    /** @return array{companies: int, parties: int, entries: int, open: int, overdue: int, settled: int} */
+    /** @return array{companies: int, parties: int, entries: int, open: int, overdue: int} */
     private function seedDemo(string $password): array
     {
         $this->password = $password;
@@ -141,8 +150,7 @@ class DemoSeeder extends Seeder
         return ['companies' => count($companies), 'parties' => Party::query()->whereIn('company_id', $ids)->count(),
             'entries' => JournalEntry::query()->whereIn('company_id', $ids)->count(),
             'open' => JournalEntry::query()->whereIn('company_id', $ids)->open()->count(),
-            'overdue' => JournalEntry::query()->whereIn('company_id', $ids)->open()->where('due_date', '<', $today)->count(),
-            'settled' => JournalEntry::query()->whereIn('company_id', $ids)->posted()->whereHas('settlements', fn ($query) => $query->posted())->count()];
+            'overdue' => JournalEntry::query()->whereIn('company_id', $ids)->open()->where('due_date', '<', $today)->count()];
     }
 
     /**
@@ -180,6 +188,7 @@ class DemoSeeder extends Seeder
         $cash = $methods['cash']->first()->id;
         $banks = $methods['bank']->pluck('id')->all();
         $wallets = $methods['mobile_banking']->pluck('id')->all();
+        $this->funds[$company->id] = array_fill_keys([$cash, ...$banks, ...$wallets], 0);
 
         $party = fn (array $row, string $notes): int => Party::create(['company_id' => $company->id, 'name' => $row[0], 'phone' => $row[1], 'notes' => $notes, 'is_active' => true])->id;
         $customers = array_map(fn (array $row): int => $party($row, 'Customer'), $definition['customers']);
@@ -194,45 +203,27 @@ class DemoSeeder extends Seeder
             $staff[] = [(int) $employee->parties()->value('id'), $salary];
         }
 
-        foreach ([$cash, ...$banks, ...$wallets] as $index => $methodId) {
-            $taka = $methodId === $cash ? $random->getInt(50, 200) * 1_000 : $random->getInt(15, 60) * ($index === 1 ? 1_00_000 : 20_000);
-            $this->ledger->recordOpening(Account::findOrFail($methodId), $taka * 100, $start->toDateString(), $this->owner);
-        }
-
         $pick = fn (array $items): int => $items[$random->getInt(0, count($items) - 1)];
-        $receiveInto = $definition['code'] === 'SKR' ? [$cash, $cash, ...$wallets, $banks[0]] : [...$banks, ...$wallets];
-        $credit = [];
+        $receiveInto = $definition['code'] === 'SKR' ? [$cash, $cash, ...$wallets, $banks[0]] : [$cash, ...$banks, ...$wallets];
         $sale = 0;
         for ($month = $start; $month <= $this->today; $month = $month->addMonthNoOverflow()) {
             $day = fn (int $number): CarbonImmutable => $month->setDate($month->year, $month->month, $number);
             $monthName = $month->format('F Y');
-            $this->transfer($company, $day(3), $random->getInt(3, 8) * 10_000, $cash, $banks[0], 'Petty cash withdrawal');
-            if ($wallets !== []) {
-                $this->transfer($company, $day(4), $random->getInt(2, 5) * 10_000, $wallets[0], $banks[0], 'Wallet top-up from bank');
-            }
-            $this->bill($company, EntryType::Expense, $day(5), $definition['rent'] * 100, $account['Office Rent'], $banks[0], $landlord, "Office rent for {$monthName}");
-            $this->bill($company, EntryType::Expense, $day(12), $random->getInt(8, 25) * 1_000_00, $account['Utilities'], $pick([$banks[0], ...$wallets]), null, 'Electricity, gas and internet bills');
-
             for ($count = $random->getInt($definition['sale'][0], $definition['sale'][1]); $count > 0; $count--) {
                 $sale++;
-                $bill = $this->creditBill($random, $company, EntryType::Income, $day($random->getInt(1, 27)), $random->getInt($definition['sale'][2], $definition['sale'][3]) * 100,
-                    $account[$definition['sales']], $pick($receiveInto), $pick($customers), 'Invoice for goods and services', sprintf('INV-%s-%04d', $definition['code'], $sale));
-                if ($bill !== null) {
-                    $credit[] = $bill;
-                }
+                $this->bill($company, EntryType::Income, $day($random->getInt(1, 27)), $random->getInt($definition['sale'][2], $definition['sale'][3]) * 100,
+                    $account[$definition['sales']], $pick($receiveInto), $pick($customers), 'Invoice for goods and services', reference: sprintf('INV-%s-%04d', $definition['code'], $sale));
             }
             if ($definition['code'] === 'SKR') {
                 foreach ([7, 14, 21, 27] as $number) {
                     $this->bill($company, EntryType::Income, $day($number), $random->getInt(1_20_000, 2_20_000) * 100, $account['Sales & Service Income'], $pick([$cash, $cash, ...$wallets]), null, 'Weekly dine-in and takeaway sales');
                 }
-                $this->transfer($company, $day(20), $random->getInt(30, 45) * 10_000, $banks[0], $cash, 'Cash sales deposited to the bank');
             }
+            $this->bill($company, EntryType::Expense, $day(5), $definition['rent'] * 100, $account['Office Rent'], $banks[0], $landlord, "Office rent for {$monthName}");
+            $this->bill($company, EntryType::Expense, $day(12), $random->getInt(8, 25) * 1_000_00, $account['Utilities'], $pick([$banks[0], ...$wallets]), null, 'Electricity, gas and internet bills');
             for ($count = $random->getInt($definition['purchase'][0], $definition['purchase'][1]); $count > 0; $count--) {
-                $bill = $this->creditBill($random, $company, EntryType::Expense, $day($random->getInt(1, 27)), $random->getInt($definition['purchase'][2], $definition['purchase'][3]) * 100,
+                $this->bill($company, EntryType::Expense, $day($random->getInt(1, 27)), $random->getInt($definition['purchase'][2], $definition['purchase'][3]) * 100,
                     $account[$definition['purchases']], $pick([...$banks, ...$wallets]), $pick($suppliers), $definition['purchases']);
-                if ($bill !== null) {
-                    $credit[] = $bill;
-                }
             }
             for ($count = $random->getInt(2, 4); $count > 0; $count--) {
                 $this->bill($company, EntryType::Expense, $day($random->getInt(1, 27)), $random->getInt(3, 25) * 100_00, $account['Transport & Conveyance'], $cash, null, 'CNG and rickshaw fares');
@@ -242,88 +233,38 @@ class DemoSeeder extends Seeder
                 $this->bill($company, EntryType::Expense, $day(28), $salary * 100, $account['Salaries & Wages'], $banks[0], $partyId, "Salary for {$monthName}");
             }
         }
-        $this->settleSome($random, $credit, $banks[0]);
         $this->dueSamples($company, $start, $account[$definition['sales']], $account[$definition['purchases']], $customers[0], $suppliers[0], $banks[0]);
 
         return $company;
     }
 
-    /** A fully paid bill; skipped (null) when dated after today. */
+    /**
+     * A fully paid bill; skipped (null) when dated after today. An expense the given method can't cover is paid from
+     * the company's best-funded method instead.
+     */
     private function bill(Company $company, EntryType $type, CarbonImmutable $date, int $amount, int $categoryId, int $methodId, ?int $partyId, string $description, ?int $paid = null, ?CarbonImmutable $due = null, ?string $reference = null): ?JournalEntry
     {
         if ($date->greaterThan($this->today)) {
             return null;
         }
         $paid ??= $amount;
+        $funds = &$this->funds[$company->id];
+        if ($type === EntryType::Expense && $funds[$methodId] < $paid) {
+            $methodId = array_search(max($funds), $funds, true);
+        }
+        $funds[$methodId] += $type === EntryType::Income ? $paid : -$paid;
 
         return $this->ledger->record($company, $type, ['entry_date' => $date->toDateString(), 'amount' => $amount, 'paid_amount' => $paid,
             'category_account_id' => $categoryId, 'payment_account_id' => $paid > 0 ? $methodId : null, 'party_id' => $partyId,
             'due_date' => $paid < $amount ? $due?->toDateString() : null, 'description' => $description, 'reference' => $reference], $this->owner);
     }
 
-    /** Half of sales and purchases are on credit (unpaid) or partly paid, due in 15 or 30 days; with salaries, rent and petty expenses always paid, that is about one bill in five overall. */
-    private function creditBill(Randomizer $random, Company $company, EntryType $type, CarbonImmutable $date, int $amount, int $categoryId, int $methodId, int $partyId, string $description, ?string $reference = null): ?JournalEntry
-    {
-        $roll = $random->getInt(0, 9);
-        $paid = match ($roll) {
-            0, 1 => 0,
-            2, 3, 4 => intdiv($amount * $random->getInt(30, 70), 100_00) * 100,
-            default => $amount,
-        };
-        $bill = $this->bill($company, $type, $date, $amount, $categoryId, $methodId, $partyId, $description, $paid, $date->addDays($random->getInt(0, 1) === 0 ? 15 : 30), $reference);
-
-        return $bill !== null && $paid < $amount ? $bill : null;
-    }
-
-    private function transfer(Company $company, CarbonImmutable $date, int $taka, int $toId, int $fromId, string $description): void
-    {
-        if ($date->lessThanOrEqualTo($this->today)) {
-            $this->ledger->record($company, EntryType::Transfer, ['entry_date' => $date->toDateString(), 'amount' => $taka * 100,
-                'debit_account_id' => $toId, 'credit_account_id' => $fromId, 'description' => $description], $this->owner);
-        }
-    }
-
-    /**
-     * Settles credit bills as customers and suppliers would: past-due bills mostly in full around the due date and
-     * one in ten only in half (which leaves it overdue); bills not yet due sometimes in part.
-     *
-     * @param  list<JournalEntry>  $bills
-     */
-    private function settleSome(Randomizer $random, array $bills, int $methodId): void
-    {
-        foreach ($bills as $bill) {
-            $outstanding = $this->ledger->outstanding($bill);
-            $roll = $random->getInt(0, 9);
-            if ($bill->due_date->greaterThan($this->today)) {
-                if ($roll < 3) {
-                    $this->settle($bill, $this->today->min($bill->entry_date->toImmutable()->addDays(5)), intdiv($outstanding, 200) * 100, $methodId);
-                }
-
-                continue;
-            }
-            $date = $this->today->min($bill->due_date->toImmutable()->addDays($random->getInt(-5, 10)))->max($bill->entry_date->toImmutable());
-            $this->settle($bill, $date, $roll < 9 ? $outstanding : intdiv($outstanding, 200) * 100, $methodId);
-        }
-    }
-
-    private function settle(JournalEntry $bill, CarbonImmutable $date, int $amount, int $methodId): void
-    {
-        if ($amount > 0) {
-            $this->ledger->settle($bill, ['entry_date' => $date->toDateString(), 'amount' => $amount, 'payment_account_id' => $methodId,
-                'description' => $bill->type === EntryType::Income ? 'Payment received against '.$bill->number : 'Payment made against '.$bill->number], $this->owner);
-        }
-    }
-
-    /** One bill in each due status, so every screen has something to show: due, partly paid, overdue and settled in two parts. */
+    /** One open bill in each due status, so every screen has something to show: due, partly paid and overdue. */
     private function dueSamples(Company $company, CarbonImmutable $start, int $salesId, int $purchasesId, int $customerId, int $supplierId, int $bankId): void
     {
         $this->bill($company, EntryType::Income, $this->today->subDays(3), 75_000_00, $salesId, $bankId, $customerId, 'Invoice on 30-day credit', 0, $this->today->addDays(27));
         $this->bill($company, EntryType::Expense, $this->today->subDays(6), 50_000_00, $purchasesId, $bankId, $supplierId, 'Supplier bill, 40% paid on delivery', 20_000_00, $this->today->addDays(14));
-        $overdue = $this->bill($company, EntryType::Income, $start->addDays(40), 1_20_000_00, $salesId, $bankId, $customerId, 'Invoice on 30-day credit', 0, $start->addDays(70));
-        $this->settle($overdue, $start->addDays(75), 40_000_00, $bankId);
-        $settled = $this->bill($company, EntryType::Expense, $start->addDays(20), 90_000_00, $purchasesId, $bankId, $supplierId, 'Supplier bill on credit', 0, $start->addDays(50));
-        $this->settle($settled, $start->addDays(35), 45_000_00, $bankId);
-        $this->settle($settled, $start->addDays(50), 45_000_00, $bankId);
+        $this->bill($company, EntryType::Income, $start->addDays(40), 1_20_000_00, $salesId, $bankId, $customerId, 'Invoice on 30-day credit, one third paid', 40_000_00, $start->addDays(70));
     }
 
     /** Posts two mistaken entries and voids them with a reason, as staff would. */

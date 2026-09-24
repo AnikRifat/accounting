@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Chart of accounts')" :description="$all ? __('Accounts of all your companies, combined by name, with their current balance. Voided entries are excluded.') : __('Accounts with their current balance. Voided entries are excluded.')">
-        @can('accounts.manage')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ __('Add account') }}</x-button></x-slot:actions> @endcan
+        @can('accounts.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.accounts.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Add account') }}</x-button></x-slot:actions> @endcan
     </x-page-header>
     @if(! $hasCompanies)
         <x-card><x-empty-state emoji="🔒" :title="__('No company yet')" :description="__('You are not assigned to any company yet.')" /></x-card>

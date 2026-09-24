@@ -3,9 +3,8 @@
     <x-page-header :title="__('Transactions')" :description="__('Income, expenses and transfers. Voided entries stay listed but never count in totals.')">
         @can('entries.create')
             <x-slot:actions>
-                <x-button icon="plus" :href="route('admin.entries.create', 'income')">{{ __('Record income') }}</x-button>
-                <x-button icon="plus" :href="route('admin.entries.create', 'expense')">{{ __('Record expense') }}</x-button>
-                <x-button variant="secondary" :href="route('admin.entries.create', 'transfer')">{{ __('Record transfer') }}</x-button>
+                <x-button icon="plus" :href="route('admin.entries.create', 'income')" :navigate="false" wire:click.prevent="openSheet('create:income')">{{ __('Record income') }}</x-button>
+                <x-button icon="plus" :href="route('admin.entries.create', 'expense')" :navigate="false" wire:click.prevent="openSheet('create:expense')">{{ __('Record expense') }}</x-button>
             </x-slot:actions>
         @endcan
     </x-page-header>
@@ -16,25 +15,27 @@
     </div>
     <x-card flush>
         <x-slot:toolbar>
-            <x-toolbar>
+            <x-toolbar :active="collect([$type, $account, $party, $payer, $status])->filter(fn ($value) => $value !== '')->count()">
                 <x-form.input name="search" :label="__('Search')" type="search" wire:model.live.debounce.300ms="search" maxlength="100" :placeholder="__('Number, description or reference.')" />
-                <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />
-                <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />
-                <x-form.select name="type" :label="__('Type')" wire:model.live="type" :options="$types" />
-                <x-form.select name="account" :label="__('Account')" wire:model.live="account" :options="$accounts" />
-                <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$parties" />
-                <x-form.select name="status" :label="__('Due status')" wire:model.live="status" :options="$statuses" />
-                <x-slot:actions>
-                    <x-button variant="ghost" size="sm" icon="filter-x" wire:click="clearFilters">{{ __('Clear filters') }}</x-button>
-                    <x-button variant="secondary" size="sm" icon="download" :href="route('admin.entries.export', $this->filters())" :navigate="false">{{ __('Export CSV') }}</x-button>
-                </x-slot:actions>
+                <x-form.date-range :label="__('Date')" />
+                <x-slot:filters>
+                    <x-form.select name="type" :label="__('Type')" wire:model.live="type" :options="$types" />
+                    <x-form.select name="account" :label="__('Account')" wire:model.live="account" :options="$accounts" />
+                    <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$parties" />
+                    <x-form.select name="payer" :label="__('Paid / received by')" wire:model.live="payer" :options="$payers" />
+                    <x-form.select name="status" :label="__('Due status')" wire:model.live="status" :options="$statuses" />
+                </x-slot:filters>
+                <x-slot:clear><x-button variant="ghost" icon="filter-x" wire:click="clearFilters">{{ __('Clear filters') }}</x-button></x-slot:clear>
+                <x-slot:actions><x-table.export :columns="$this->tableColumns()" :csv="route('admin.entries.export', $this->filters())" /></x-slot:actions>
             </x-toolbar>
         </x-slot:toolbar>
+        <x-table.bulk />
         <x-table :caption="__('Transactions')">
-            <x-slot:head><th>{{ __('Entry') }}</th><th>{{ __('Type') }}</th><th>{{ $showCompany ? __('Party · company') : __('Party') }}</th><th>{{ __('Details') }}</th><th class="num">{{ __('Total') }}</th><th class="num">{{ __('Paid') }}</th><th class="num">{{ __('Due') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            <x-slot:head><x-table.check-all :ids="$entries->pluck('id')->all()" /><th>{{ __('Entry') }}</th><th>{{ __('Type') }}</th><th>{{ $showCompany ? __('Party · company') : __('Party') }}</th><th>{{ __('Details') }}</th><th class="num">{{ __('Total') }}</th><th class="num">{{ __('Paid') }}</th><th class="num">{{ __('Due') }}</th><th>{{ __('Paid / received by') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
             @forelse($entries as $entry)
                 @php($status = $entry->dueStatus())
                 <tr wire:key="entry-{{ $entry->id }}" @class(['is-voided' => $entry->isVoided()])>
+                    <x-table.check :value="$entry->id" :label="$entry->number" />
                     <td class="nowrap"><strong>{{ $entry->number }}</strong><p class="muted">{{ $entry->entry_date->format('d M Y') }}</p></td>
                     <td><x-badge.entry-type :type="$entry->type" /></td>
                     <td>{{ $entry->party?->name ?? '—' }}@if($showCompany)<p class="muted">{{ $entry->company->name }}</p>@endif</td>
@@ -43,15 +44,16 @@
                     <td class="num">@if($entry->isVoided())<s><x-money :value="$entry->amount" /></s>@else<x-money :value="$entry->amount" />@endif</td>
                     <td class="num">@if($status)<x-money :value="$entry->paidAmount()" />@else—@endif</td>
                     <td class="num">@if($status && $entry->outstanding > 0)<x-money :value="$entry->outstanding" />@if($entry->due_date)<p class="muted">{{ $entry->due_date->format('d M Y') }}</p>@endif @else—@endif</td>
+                    <td>{{ $entry->payer?->name ?? '—' }}</td>
                     <td><x-badge.due-status :status="$status" :voided="$entry->isVoided()" :reason="$entry->void_reason" /></td>
                     <td><div class="row-actions">@unless($entry->isVoided())
-                        @if($status && $entry->outstanding > 0)@can('entries.create')<x-button variant="secondary" size="sm" icon="wallet" :href="route('admin.entries.settle', $entry)">{{ $entry->type === \App\Enums\EntryType::Income ? __('Receive payment') : __('Make payment') }}</x-button>@endcan @endif
-                        @can('entries.update')<x-button variant="ghost" size="sm" icon="pencil" :href="$entry->type->isSettlement() ? route('admin.entries.settlement.edit', $entry) : route('admin.entries.edit', $entry)" :label="__('Edit :number', ['number' => $entry->number])" />@endcan
+                        @if($status && $entry->outstanding > 0)@can('entries.create')<x-button variant="secondary" size="sm" icon="wallet" :href="route('admin.entries.settle', $entry)" :navigate="false" wire:click.prevent="openSheet('settle:{{ $entry->id }}')">{{ $entry->type === \App\Enums\EntryType::Income ? __('Receive payment') : __('Make payment') }}</x-button>@endcan @endif
+                        @can('entries.update')<x-button variant="ghost" size="sm" icon="pencil" :href="$entry->type->isSettlement() ? route('admin.entries.settlement.edit', $entry) : route('admin.entries.edit', $entry)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $entry->id }}')" :label="__('Edit :number', ['number' => $entry->number])" />@endcan
                         @can('entries.void')<x-button variant="ghost" size="sm" icon="ban" class="text-danger" wire:click="confirmVoid({{ $entry->id }})" :label="__('Void :number', ['number' => $entry->number])" />@endcan
                     @endunless</div></td>
                 </tr>
             @empty
-                <x-table.empty colspan="9" emoji="🧾">{{ __('No entries found.') }}</x-table.empty>
+                <x-table.empty colspan="11" emoji="🧾">{{ __('No entries found.') }}</x-table.empty>
             @endforelse
         </x-table>
         {{ $entries->links() }}
@@ -64,4 +66,16 @@
             </x-drawer>
         </div>
     @endif
+    <x-sheet :label="__('Transaction')">
+        @if($this->sheetAction() === 'create' && in_array($this->sheetArgument(), ['income', 'expense', 'transfer'], true))
+            <livewire:admin.entries.form :type="$this->sheetArgument()" :key="'sheet-'.$sheet" />
+        @elseif(in_array($this->sheetAction(), ['edit', 'settle'], true))
+            @php($sheetEntry = \App\Models\JournalEntry::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument()))
+            @if($this->sheetAction() === 'settle' || $sheetEntry->type->isSettlement())
+                <livewire:admin.entries.settle :entry="$sheetEntry" :key="'sheet-'.$sheet" />
+            @else
+                <livewire:admin.entries.form :entry="$sheetEntry" :key="'sheet-'.$sheet" />
+            @endif
+        @endif
+    </x-sheet>
 </div>

@@ -3,12 +3,12 @@
 namespace App\Livewire\Admin\Companies;
 
 use App\Livewire\Concerns\WithFormSheet;
-use App\Models\Company;
-use Illuminate\Contracts\View\View;
-use Illuminate\Support\Facades\Gate;
 use App\Livewire\Concerns\WithTableTools;
+use App\Models\Company;
 use App\Support\TableExport;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 use Livewire\WithPagination;
 

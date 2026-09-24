@@ -6,8 +6,7 @@
         <x-slot:toolbar>
             <x-toolbar>
                 <x-form.select name="period" :label="__('Period')" wire:model.live="period" :options="$periodOptions" />
-                <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />
-                <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />
+                <x-form.date-range :label="__('Dates')" />
             </x-toolbar>
         </x-slot:toolbar>
         @if($income->isEmpty() && $expense->isEmpty())

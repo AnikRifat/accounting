@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Entries;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
 use App\Livewire\Concerns\WithFormSheet;
+use App\Livewire\Concerns\WithTableTools;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
@@ -12,7 +13,9 @@ use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
@@ -21,7 +24,7 @@ use Livewire\WithPagination;
 
 class Index extends Component
 {
-    use WithFormSheet, WithPagination;
+    use WithFormSheet, WithPagination, WithTableTools;
 
     private const FILTERS = ['from', 'to', 'type', 'account', 'party', 'payer', 'status', 'search'];
 
@@ -112,13 +115,12 @@ class Index extends Component
         $companyIds = $context->companyIds();
         $codes = $context->isAll() ? Company::query()->whereKey($companyIds)->pluck('code', 'id') : collect();
         $suffix = fn (int $companyId): string => $codes->has($companyId) ? ' ('.$codes[$companyId].')' : '';
-        $query = JournalEntry::visibleTo($user)->whereIn('company_id', $companyIds)->filter($this->filters());
+        $query = $this->filteredEntries();
         $totals = (clone $query)->posted()->whereIn('type', [EntryType::Income, EntryType::Expense])
             ->toBase()->groupBy('type')->selectRaw('type, SUM(amount) as total')->pluck('total', 'type');
 
         return view('livewire.admin.entries.index', [
-            'entries' => $query->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'payer:id,name'])
-                ->orderByDesc('entry_date')->orderByDesc('id')->paginate(25),
+            'entries' => $this->tableQuery()->paginate(25),
             'income' => (int) ($totals[EntryType::Income->value] ?? 0),
             'expense' => (int) ($totals[EntryType::Expense->value] ?? 0),
             'types' => ['' => __('All types')] + collect(EntryType::cases())->mapWithKeys(fn (EntryType $type): array => [$type->value => $type->label()])->all(),
@@ -143,5 +145,45 @@ class Index extends Component
     protected function sheetsNeedingCompany(): array
     {
         return ['create'];
+    }
+
+    /** @return Builder<JournalEntry> the visible entries of the header companies, with the list filters */
+    private function filteredEntries(): Builder
+    {
+        return JournalEntry::visibleTo(auth()->user())->whereIn('company_id', app(CompanyContext::class)->companyIds())->filter($this->filters());
+    }
+
+    /** @return Builder<JournalEntry> the list's rows, in the list's order */
+    protected function tableQuery(): Builder
+    {
+        return $this->filteredEntries()->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'payer:id,name'])
+            ->orderByDesc('entry_date')->orderByDesc('id');
+    }
+
+    protected function tableExport(): TableExport
+    {
+        $details = fn (JournalEntry $entry): ?string => match (true) {
+            $entry->type->isBill() => $entry->categoryAccount()?->name,
+            $entry->type->isSettlement() => __('For :number', ['number' => $entry->bill?->number]).' · '.$entry->paymentAccount()?->name,
+            default => $entry->creditAccount()?->name.' → '.$entry->debitAccount()?->name,
+        };
+        $due = fn (JournalEntry $entry): bool => ! $entry->isVoided() && $entry->dueStatus() !== null;
+
+        return new TableExport(__('Transactions'), [
+            'number' => ['label' => __('Number'), 'value' => fn (JournalEntry $entry): string => $entry->number],
+            'date' => ['label' => __('Date'), 'value' => fn (JournalEntry $entry) => $entry->entry_date, 'type' => 'date'],
+            'company' => ['label' => __('Company'), 'value' => fn (JournalEntry $entry): string => $entry->company->name],
+            'type' => ['label' => __('Type'), 'value' => fn (JournalEntry $entry): string => $entry->type->label()],
+            'party' => ['label' => __('Party'), 'value' => fn (JournalEntry $entry): ?string => $entry->party?->name],
+            'details' => ['label' => __('Details'), 'value' => $details],
+            'description' => ['label' => __('Description'), 'value' => fn (JournalEntry $entry): ?string => $entry->description],
+            'reference' => ['label' => __('Reference'), 'value' => fn (JournalEntry $entry): ?string => $entry->reference],
+            'total' => ['label' => __('Total'), 'value' => fn (JournalEntry $entry): int => $entry->amount, 'type' => 'money'],
+            'paid' => ['label' => __('Paid'), 'value' => fn (JournalEntry $entry): ?int => $due($entry) ? $entry->paidAmount() : null, 'type' => 'money'],
+            'due' => ['label' => __('Due'), 'value' => fn (JournalEntry $entry): ?int => $due($entry) && $entry->outstanding > 0 ? (int) $entry->outstanding : null, 'type' => 'money'],
+            'dueDate' => ['label' => __('Due date'), 'value' => fn (JournalEntry $entry) => $due($entry) && $entry->outstanding > 0 ? $entry->due_date : null, 'type' => 'date'],
+            'payer' => ['label' => __('Paid / received by'), 'value' => fn (JournalEntry $entry): ?string => $entry->payer?->name],
+            'status' => ['label' => __('Status'), 'value' => fn (JournalEntry $entry): ?string => $entry->isVoided() ? __('Voided') : $entry->dueStatus()?->label()],
+        ], $this->companyScopeLabel());
     }
 }

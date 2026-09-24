@@ -11,7 +11,7 @@
         @error('companyId')<x-alert tone="danger">{{ $message }}</x-alert>@enderror
         <x-card :title="__('Payment details')">
             <div class="form-grid">
-                <x-form.input name="entryDate" :label="__('Date')" type="date" wire:model="entryDate" required />
+                <x-form.date name="entryDate" :label="__('Date')" wire:model="entryDate" required />
                 <x-form.input name="amount" :label="__('Amount (৳)')" wire:model="amount" required inputmode="decimal" autocomplete="off" autofocus :help="__('Up to :amount.', ['amount' => \App\Support\Money::format($available)])" />
                 <x-form.select name="paymentAccountId" :label="__('Payment method')" wire:model="paymentAccountId" :options="$methods" />
                 <x-form.input name="reference" :label="__('Reference')" wire:model="reference" maxlength="100" :help="__('Voucher, invoice or cheque number.')" />

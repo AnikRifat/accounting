@@ -22,7 +22,7 @@
             <x-card :title="__('Opening balance')">
                 <div class="form-grid">
                     <x-form.input name="openingBalance" :label="__('Opening balance (৳)')" wire:model="openingBalance" inputmode="decimal" autocomplete="off" :help="__('Optional. The money already in this account, posted against Opening Balance Equity.')" />
-                    <x-form.input name="openingDate" :label="__('As of date')" type="date" wire:model="openingDate" />
+                    <x-form.date name="openingDate" :label="__('As of date')" wire:model="openingDate" />
                 </div>
             </x-card>
         @endif

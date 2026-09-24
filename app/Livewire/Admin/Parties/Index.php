@@ -3,13 +3,13 @@
 namespace App\Livewire\Admin\Parties;
 
 use App\Livewire\Concerns\WithFormSheet;
+use App\Livewire\Concerns\WithTableTools;
 use App\Models\Party;
 use App\Support\CompanyContext;
-use Illuminate\Contracts\View\View;
-use Illuminate\Support\Facades\Gate;
-use App\Livewire\Concerns\WithTableTools;
 use App\Support\TableExport;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -74,6 +74,6 @@ class Index extends Component
             'address' => ['label' => __('Address'), 'value' => fn (Party $party): ?string => $party->address],
             'notes' => ['label' => __('Notes'), 'value' => fn (Party $party): ?string => $party->notes],
             'status' => ['label' => __('Status'), 'value' => fn (Party $party): string => $party->is_active ? __('Active') : __('Inactive')],
-        ], app(CompanyContext::class)->label());
+        ], $this->companyScopeLabel());
     }
 }

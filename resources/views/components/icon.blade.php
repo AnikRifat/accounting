@@ -1,6 +1,7 @@
 @props(['name'])
 {{-- Stroke icons (Lucide geometry, ISC). Decorative by default; label the control that holds them. --}}
 @php($paths = [
+    'minus' => '<path d="M5 12h14"/>',
     'plus' => '<path d="M12 5v14M5 12h14"/>',
     'pencil' => '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
     'trash' => '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',

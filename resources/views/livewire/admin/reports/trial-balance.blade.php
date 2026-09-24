@@ -3,7 +3,7 @@
         <x-slot:actions><x-button variant="secondary" icon="printer" class="no-print" onclick="window.print()">{{ __('Print') }}</x-button></x-slot:actions>
     </x-page-header>
     <x-card flush>
-        <x-slot:toolbar><x-toolbar><x-form.input name="asOf" :label="__('As of date')" type="date" wire:model.live="asOf" /></x-toolbar></x-slot:toolbar>
+        <x-slot:toolbar><x-toolbar><x-form.date name="asOf" :label="__('As of date')" wire:model.live="asOf" /></x-toolbar></x-slot:toolbar>
         @if($asOfLabel)
             <div class="px-5 pb-3 max-sm:px-4" role="status">@if($balanced)<x-alert tone="success" :title="__('Balanced')">{{ __('Total debits equal total credits.') }}</x-alert>@else<x-alert tone="danger" :title="__('Out of balance')">{{ __('Difference: :amount', ['amount' => \App\Support\Money::format(abs($debitTotal - $creditTotal))]) }}</x-alert>@endif</div>
         @endif

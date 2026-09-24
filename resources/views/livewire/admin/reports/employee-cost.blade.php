@@ -6,8 +6,7 @@
         <x-slot:toolbar>
             <x-toolbar>
                 <x-form.select name="period" :label="__('Period')" wire:model.live="period" :options="$periodOptions" />
-                <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />
-                <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />
+                <x-form.date-range :label="__('Dates')" />
             </x-toolbar>
         </x-slot:toolbar>
         <p class="muted px-5 pb-3 max-sm:px-4">{{ __('Posted expenses recorded against each employee, such as salaries. Paid and outstanding are as of today. Employees with no expenses in the period are not listed.') }}</p>

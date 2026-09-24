@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Concerns;
 
+use App\Support\CompanyContext;
 use App\Support\TableExport;
 use Illuminate\Database\Eloquent\Builder;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -43,6 +44,14 @@ trait WithTableTools
         $this->dispatch('print-table', url: route('admin.print', $token));
 
         return null;
+    }
+
+    /** "All companies" or the header company's name, as the subtitle of an export. */
+    protected function companyScopeLabel(): string
+    {
+        $context = app(CompanyContext::class);
+
+        return $context->isAll() ? __('All companies') : (string) $context->company()?->name;
     }
 
     /** @return array<string, string> column key → label, for the export and print options */

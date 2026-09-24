@@ -18,7 +18,7 @@
                 <x-form.input name="designation" :label="__('Designation')" wire:model="designation" maxlength="255" />
                 <x-form.input name="department" :label="__('Department')" wire:model="department" maxlength="255" />
                 <x-form.input name="monthlySalary" :label="__('Monthly salary (৳)')" wire:model="monthlySalary" required inputmode="decimal" autocomplete="off" :help="__('In taka, e.g. 25,000.50.')" />
-                <x-form.input name="joinedOn" :label="__('Joining date')" type="date" wire:model="joinedOn" />
+                <x-form.date name="joinedOn" :label="__('Joining date')" wire:model="joinedOn" />
             </div>
         </x-card>
         <x-card :title="__('Companies')" :description="__('Each ticked company gets a party for this employee, so salaries and other expenses can be recorded against them. Roles with all-company access see every company, but get a party only where ticked.')">

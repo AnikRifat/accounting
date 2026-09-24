@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Roles & permissions')" :description="__('System roles are fixed. Custom roles grant explicit abilities.')">
-        @can('roles.create')@can('permissions.manage')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ __('Create custom role') }}</x-button></x-slot:actions> @endcan @endcan
+        @can('roles.create')@can('permissions.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.roles.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Create custom role') }}</x-button></x-slot:actions> @endcan @endcan
     </x-page-header>
     @error('role')<x-alert tone="danger">{{ $message }}</x-alert>@enderror
     <x-card flush>

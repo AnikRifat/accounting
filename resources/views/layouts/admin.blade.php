@@ -63,9 +63,8 @@
                     <div class="menu" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
                         <x-button icon="plus" x-on:click="open = ! open" aria-haspopup="menu" x-bind:aria-expanded="open"><span class="quick-add-label">{{ __('New') }}</span></x-button>
                         <div class="menu-panel" role="menu" x-show="open" x-cloak x-transition:enter="menu-enter" x-transition:enter-start="menu-hidden" x-transition:leave="menu-enter" x-transition:leave-end="menu-hidden">
-                            <a class="menu-item" role="menuitem" href="{{ route('admin.entries.create', 'income') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">💰</span>{{ __('Record income') }}</a>
-                            <a class="menu-item" role="menuitem" href="{{ route('admin.entries.create', 'expense') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">🧾</span>{{ __('Record expense') }}</a>
-                            <a class="menu-item" role="menuitem" href="{{ route('admin.entries.create', 'transfer') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">🔁</span>{{ __('Record transfer') }}</a>
+                            <a class="menu-item" role="menuitem" href="{{ route('admin.entries.index', ['sheet' => 'create:income']) }}" wire:navigate><span class="nav-emoji" aria-hidden="true">💰</span>{{ __('Record income') }}</a>
+                            <a class="menu-item" role="menuitem" href="{{ route('admin.entries.index', ['sheet' => 'create:expense']) }}" wire:navigate><span class="nav-emoji" aria-hidden="true">🧾</span>{{ __('Record expense') }}</a>
                         </div>
                     </div>
                 @endcan

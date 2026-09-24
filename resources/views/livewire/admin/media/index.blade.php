@@ -5,7 +5,7 @@
         <x-card :title="__('Upload file')">
             <form wire:submit="saveUpload" class="stack">
                 <div class="form-grid">
-                    <x-form.input name="file" :label="__('Image or document')" type="file" wire:model="file" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.csv" required :help="__('JPG, PNG, WebP, GIF, PDF, text or CSV. Maximum 8 MB.')" />
+                    <x-form.image name="file" :label="__('Image or document')" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,text/csv,.csv" :help="__('JPG, PNG, WebP, GIF, PDF, text or CSV. Maximum 8 MB. Photos can be cropped before upload.')" />
                     <x-form.input name="collection" :label="__('Collection')" wire:model="collection" required :help="__('A purpose such as avatar, document, or banner.')" />
                 </div>
                 <div><x-button type="submit" icon="upload" wire:loading.attr="disabled">{{ __('Upload file') }}</x-button></div>
