@@ -16,8 +16,9 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Posted lines per account of the header company context in a period. With no account chosen, one summary row per account with a
- * balance or activity; with an account, its lines with opening, running and closing balances.
+ * Posted lines per income or expense category of the header company context in a period. With no category chosen, one summary row
+ * per category with a balance or activity; with a category, its lines with opening, running and closing balances. Payment methods,
+ * receivables, payables and equity are left out for now.
  */
 class AccountLedger extends Component
 {
@@ -34,7 +35,7 @@ class AccountLedger extends Component
         Gate::authorize('reports.view');
         $context = app(CompanyContext::class);
         $companyIds = $context->companyIds();
-        $accounts = Account::query()->whereIn('company_id', $companyIds)->with('company:id,code')->orderBy('code')->orderBy('company_id')->get();
+        $accounts = Account::query()->whereIn('company_id', $companyIds)->categories()->with('company:id,code')->orderBy('code')->orderBy('company_id')->get();
         $account = $accounts->firstWhere('id', (int) $this->account);
         $this->account = (string) $account?->id;
         $range = $this->resolvePeriod();

@@ -2,6 +2,8 @@ import imageUpload from './image-upload';
 
 // Searchable select behind x-form.select. Options are server-rendered <li> elements, so Livewire
 // morphs them like any other markup; a MutationObserver bumps `revision` so the label stays current.
+// Render-time lookups go through $root, not $refs: during a morph Alpine evaluates x-text on the incoming
+// markup before the list's x-ref is registered there, and a throw would leave the label blank.
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('searchSelect', () => ({
         value: '',
@@ -23,7 +25,7 @@ document.addEventListener('alpine:init', () => {
         items() {
             this.revision;
 
-            return Array.from(this.$refs.list.querySelectorAll('[role=option]'));
+            return Array.from(this.$root.querySelectorAll('[role=option]'));
         },
 
         current() {
@@ -33,7 +35,7 @@ document.addEventListener('alpine:init', () => {
         selectedLabel() {
             const item = this.items().find((el) => el.dataset.value === this.current());
 
-            return item ? item.textContent.trim() : this.$refs.list.dataset.placeholder;
+            return item ? item.textContent.trim() : this.$root.dataset.placeholder;
         },
 
         matches(el) {
@@ -145,7 +147,10 @@ const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 
 const formatDay = (s) => {
     const d = fromIso(s);
 
-    return d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Same shape as the server's 'd M Y', e.g. "24 Sep 2026".
+    return d ? `${pad(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()}` : '';
 };
 const calendar = {
     viewYear: 0,
@@ -333,7 +338,7 @@ document.addEventListener('alpine:init', () => {
     window.Alpine.data('tableExport', (keys) => ({
         keys,
         picked: [...keys],
-        open: false,
+        visible: false,
         busy: false,
         format: 'xlsx',
         scope: 'all',
@@ -341,19 +346,19 @@ document.addEventListener('alpine:init', () => {
 
         show(scope) {
             this.scope = scope === 'selected' && this.$wire.selected.length ? 'selected' : 'all';
-            this.open = true;
+            this.visible = true;
         },
         async run(csvUrl) {
             if (this.format === 'csv') {
                 window.location.href = csvUrl;
-                this.open = false;
+                this.visible = false;
 
                 return;
             }
             this.busy = true;
             try {
                 await this.$wire.exportTable(this.format, this.scope, this.picked, this.orientation);
-                this.open = false;
+                this.visible = false;
             } finally {
                 this.busy = false;
             }

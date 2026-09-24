@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Livewire\Admin\Entries\Index as EntryIndex;
 use App\Livewire\Admin\Parties\Index as PartyIndex;
-use App\Livewire\Admin\Users\Index as UserIndex;
 use App\Models\Company;
 use App\Models\Party;
 use App\Models\User;
@@ -63,6 +62,5 @@ class FormSheetTest extends TestCase
 
         $this->get(route('admin.users.index', ['sheet' => 'create']))->assertForbidden();
         Livewire::test(PartyIndex::class)->call('openSheet', 'edit:'.Party::factory()->create(['company_id' => $company->id])->id)->assertForbidden();
-        $this->assertTrue(true, UserIndex::class);
     }
 }

@@ -185,6 +185,89 @@ Rules:
   DemoSeeder.
 - Until then, no new code may depend on `Employee`.
 
+## Increment 10 contract: deleting (Anik, 2026-09-24)
+
+Decisions:
+- **Transactions:** soft delete into a Trash page, with restore and permanent delete.
+- **Categories, parties and payment methods already used in transactions:** a delete dialog offers
+  to **transfer** their transactions to another record. If you don't transfer, a warning explains
+  that **hard delete** removes everything related.
+- **Unused records:** simply deleted.
+- **Companies:** only hard delete of their whole books, confirmed by typing the company code
+  (coordinator decision: moving entries between companies' books is not meaningful).
+
+Permissions (already in `config/permissions.php`):
+- New abilities: `entries.delete` (move to Trash), `entries.purge` (restore from Trash is
+  `entries.delete`; permanent delete, hard delete of related entries, and company delete with books
+  all need `entries.purge`), `accounts.delete` (categories, payment methods, chart accounts),
+  `parties.delete`, `companies.delete`.
+- Defaults: administrator has `*`; the super admin passes every check; accountant has `entries.delete`
+  (not purge), `accounts.*` and `parties.*`; data-entry has none of these.
+
+**A. Trash for transactions (agent `ledger`):**
+- **Schema:** a NEW migration adds nullable `deleted_at` and `deleted_by` (FK users, nullOnDelete)
+  to `journal_entries`. Migrations are committed now, so don't edit old ones.
+- **Model:** JournalEntry uses `SoftDeletes`.
+- **Excluded everywhere:** every figure excludes trashed entries. `posted()` must exclude them, and
+  every raw or joined query that reads `journal_entries`/`journal_lines` (balances, periodActivity,
+  dues, outstanding, settledAmount, reports, dashboard, export, the Account ledger's joins) must
+  exclude `deleted_at IS NOT NULL`. Audit them all with grep; a test must prove each figure ignores
+  a trashed entry.
+- **`LedgerService::delete(JournalEntry, User)`** (`entries.delete` + company access): a bill with
+  non-trashed settlements (posted or voided) is refused with "Delete the receipts or payments
+  first". Trashing a settlement reopens its amount. Voided entries can be trashed too.
+- **`LedgerService::restore(JournalEntry, User)`** (`entries.delete`):
+  - a settlement can't be restored while its bill is trashed;
+  - restoring must not over-settle a bill (outstanding re-check), otherwise it is refused;
+  - an inactive company is refused.
+- **`LedgerService::purge(JournalEntry, User)`** (`entries.purge`): permanently deletes the entry,
+  its lines, and (for a bill) all its settlements (any state). It is the only hard-delete primitive;
+  the other agent's master-data hard delete calls it per entry.
+- **UI:**
+  - a Trash page `admin.entries.trash` (`entries.delete`): scoped to CompanyContext, listing trashed
+    entries with who deleted them and when, plus Restore and "Delete permanently" (`entries.purge`,
+    confirm step) and "Empty trash" (`entries.purge`, confirm);
+  - Transactions list: a `delete(int $id)` action (with confirmation) that the row button will call.
+- Tests must cover all of this, including isolation and roles.
+
+**B. Master-data deletion (agent `org`):**
+- **`App\Services\RecordDeletion`**, with methods to:
+  - count usage;
+  - `transfer(Account|Party $from, Account|Party $to, User)`;
+  - `hardDelete(Account|Party|Company, User)`;
+  - `deleteUnused(...)`.
+- **Transfer rules:**
+  - same company, same kind, target active and different;
+  - category → same type (income/expense), reassigning its `journal_lines.account_id`;
+  - party → any active non-deleted party of the company, reassigning `journal_entries.party_id`;
+  - payment method → another payment method, reassigning lines. Refused while transfers exist
+    between the two methods (they would become self-transfers); the dialog explains this.
+  - After a transfer the record is deleted. It all runs in one transaction and re-asserts that the
+    affected entries balance.
+- **Hard delete:** `LedgerService::purge()` on every entry that has a line on the account (or the
+  party), then deletes the record. Needs `entries.purge` + `accounts.delete`/`parties.delete`.
+- **Blocked:**
+  - system accounts (Receivable, Payable, Opening Balance Equity);
+  - employee parties (these go through the user);
+  - an account that is a company's last payment method.
+- **Company:** needs `companies.delete` (+ `entries.purge` if it has entries). It is confirmed by
+  typing the code, and deletes entries (purge), parties, accounts, the pivot and the company. The
+  header context falls back to All.
+- **UI:** one self-contained `App\Livewire\DeleteRecordDrawer` placed in the layout once (like
+  CreateCompanyDrawer), opened with the browser event `open-delete` carrying `{kind:
+  'category'|'payment-method'|'account'|'party'|'company', id}`. It shows the usage count and, when
+  used, a transfer target select (searchable) plus a hard-delete option with a red warning listing
+  what will be erased (N transactions, amounts). The hard delete is typed-confirmation for companies.
+  After success it reloads the current page with a flash.
+- Tests cover all of this, including isolation (a crafted id or kind of another company returns 404)
+  and roles.
+
+**C. Row buttons (session frish-79, which owns the list views):**
+- Add a Delete button per row: it dispatches `open-delete` for masters, and calls
+  `$wire.delete(id)` on the Transactions list.
+- Add a "Trash" link on the Transactions page.
+- Everything is gated with `@can` on the matching ability.
+
 ## Increment 7 contract: header company switcher (Anik, 2026-09-24)
 
 Decisions:

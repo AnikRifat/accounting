@@ -125,26 +125,39 @@ class ReportsTest extends TestCase
     public function test_account_ledger_shows_opening_running_and_closing_balances(): void
     {
         $company = Company::factory()->create();
-        $cash = $company->accounts()->where('code', '1000')->sole();
-        $this->opening($company, '1000', 10_000_00, '2026-07-01');
+        $sales = $company->accounts()->where('code', '4000')->sole();
         $this->bill($company, EntryType::Income, '4000', 5_000_00, '2026-08-15');
-        $expense = $this->bill($company, EntryType::Expense, '5300', 1_000_00, '2026-09-02');
-        $voided = $this->void($this->bill($company, EntryType::Expense, '5300', 500_00, '2026-09-05'), 'Typo');
-        $this->bill($company, EntryType::Income, '4000', 2_000_00, '2026-09-10');
-        $this->transfer($company, '1010', '1000', 3_000_00, '2026-09-20');
+        $income = $this->bill($company, EntryType::Income, '4000', 2_000_00, '2026-09-02');
+        $voided = $this->void($this->bill($company, EntryType::Income, '4000', 500_00, '2026-09-05'), 'Typo');
+        $this->bill($company, EntryType::Income, '4000', 3_000_00, '2026-09-10');
+        $this->bill($company, EntryType::Expense, '5300', 1_000_00, '2026-09-12');
         $this->actingAs($this->user('accountant', $company));
 
-        Livewire::test(AccountLedger::class)->assertViewHas('scopeLabel', $company->name)->set('period', 'this_month')->set('account', (string) $cash->id)
-            ->assertViewHas('report', fn (array $report): bool => $report['opening'] === 15_000_00
-                && array_column($report['rows'], 'balance') === [14_000_00, 16_000_00, 13_000_00]
-                && [$report['debit'], $report['credit'], $report['closing']] === [2_000_00, 4_000_00, 13_000_00]
-                && $report['closing'] === app(LedgerService::class)->balance($cash, CarbonImmutable::parse('2026-09-30')))
-            ->assertSee(route('admin.entries.edit', $expense->id))->assertDontSee($voided->number);
+        Livewire::test(AccountLedger::class)->assertViewHas('scopeLabel', $company->name)->set('period', 'this_month')->set('account', (string) $sales->id)
+            ->assertViewHas('report', fn (array $report): bool => $report['opening'] === 5_000_00
+                && array_column($report['rows'], 'balance') === [7_000_00, 10_000_00]
+                && [$report['debit'], $report['credit'], $report['closing']] === [0, 5_000_00, 10_000_00]
+                && $report['closing'] === app(LedgerService::class)->balance($sales, CarbonImmutable::parse('2026-09-30')))
+            ->assertSee(route('admin.entries.edit', $income->id))->assertDontSee($voided->number);
 
         $auditor = RolePermission::factory()->create(['role' => 'auditor', 'permissions' => ['admin.access', 'reports.view']]);
         $this->actingAs($this->user($auditor->role, $company));
-        Livewire::test(AccountLedger::class)->set('account', (string) $cash->id)
-            ->assertSee($expense->number)->assertDontSee(route('admin.entries.edit', $expense->id));
+        Livewire::test(AccountLedger::class)->set('account', (string) $sales->id)
+            ->assertSee($income->number)->assertDontSee(route('admin.entries.edit', $income->id));
+    }
+
+    public function test_account_ledger_lists_only_income_and_expense_categories(): void
+    {
+        $company = Company::factory()->create();
+        $this->bill($company, EntryType::Income, '4000', 5_000_00, '2026-09-10', ['paid' => 2_000_00, 'party' => Party::factory()->for($company)->create(), 'due' => '2026-10-10']);
+        $this->actingAs($this->user('accountant', $company));
+        $cash = $this->accountId($company, '1000');
+
+        Livewire::test(AccountLedger::class)
+            ->assertViewHas('accountOptions', fn (array $options): bool => array_keys(array_slice($options, 1, null, true)) === $company->accounts()->categories()->orderBy('code')->pluck('id')->all())
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->map(fn (array $row): string => $row['account']->type->value)->unique()->values()->all() === ['income'])
+            ->assertDontSee('Cash in Hand')->assertDontSee('Accounts Receivable')
+            ->set('account', (string) $cash)->assertSet('account', '')->assertViewHas('report', null);
     }
 
     public function test_account_ledger_ignores_crafted_context_and_accounts(): void
@@ -156,32 +169,32 @@ class ReportsTest extends TestCase
         session([CompanyContext::SESSION_KEY => $other->id]);
 
         Livewire::test(AccountLedger::class)->assertViewHas('scopeLabel', $mine->name)
-            ->assertViewHas('accountOptions', fn (array $options): bool => array_keys(array_slice($options, 1, null, true)) === $mine->accounts()->orderBy('code')->pluck('id')->all())
+            ->assertViewHas('accountOptions', fn (array $options): bool => array_keys(array_slice($options, 1, null, true)) === $mine->accounts()->categories()->orderBy('code')->pluck('id')->all())
             ->set('account', (string) $foreignCash)->assertSet('account', '')->assertViewHas('report', null)
             ->assertDontSee('Secret income');
         Livewire::withQueryParams(['company' => $other->id, 'account' => $foreignCash])->test(AccountLedger::class)
             ->assertSet('account', '')->assertViewHas('report', null)->assertDontSee('Secret income');
     }
 
-    public function test_account_ledger_lists_every_account_by_default_across_companies(): void
+    public function test_account_ledger_lists_every_category_by_default_across_companies(): void
     {
         [$first, $second, $hidden] = Company::factory()->count(3)->create();
         $this->bill($first, EntryType::Income, '4000', 5_000_00, '2026-08-10');
         $this->bill($second, EntryType::Expense, '5300', 2_000_00, '2026-09-10');
         $this->bill($hidden, EntryType::Income, '4000', 77_000_00, '2026-09-10');
         $this->actingAs($this->user('accountant', $first, $second));
-        $cash = $this->accountId($first, '1000');
+        $sales = $this->accountId($first, '4000');
 
         Livewire::test(AccountLedger::class)->assertSet('account', '')->assertViewHas('report', null)->assertViewHas('consolidated', true)
-            ->assertViewHas('accountOptions', fn (array $options): bool => $options[''] === 'All accounts' && ! array_key_exists($this->accountId($hidden, '1000'), $options))
+            ->assertViewHas('accountOptions', fn (array $options): bool => $options[''] === 'All accounts' && ! array_key_exists($this->accountId($hidden, '4000'), $options))
             ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->map(fn (array $row): array => [$row['account']->id, $row['closing']])->all() === [
-                [$cash, 5_000_00], [$this->accountId($second, '1000'), -2_000_00], [$this->accountId($first, '4000'), 5_000_00], [$this->accountId($second, '5300'), 2_000_00],
-            ] && $summary['debit'] === $summary['credit'])
+                [$sales, 5_000_00], [$this->accountId($second, '5300'), 2_000_00],
+            ] && [$summary['debit'], $summary['credit']] === [2_000_00, 5_000_00])
             ->assertDontSee('৳77,000.00')->assertDontSee(route('admin.choose-company'))
             ->set('period', 'this_month')
-            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->firstWhere('account.id', $cash)['opening'] === 5_000_00
-                && $summary['rows']->firstWhere('account.id', $cash)['debit'] === 0)
-            ->set('account', (string) $cash)->assertViewHas('summary', null)->assertViewHas('report', fn (array $report): bool => $report['closing'] === 5_000_00);
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->firstWhere('account.id', $sales)['opening'] === 5_000_00
+                && $summary['rows']->firstWhere('account.id', $sales)['credit'] === 0)
+            ->set('account', (string) $sales)->assertViewHas('summary', null)->assertViewHas('report', fn (array $report): bool => $report['closing'] === 5_000_00);
     }
 
     public function test_trial_balance_balances_and_matches_ledger_balances(): void

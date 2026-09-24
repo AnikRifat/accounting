@@ -101,9 +101,13 @@ class TableToolsTest extends TestCase
         $download = Livewire::test(EntryIndex::class)->call('exportTable', 'xlsx', 'all', ['number', 'total'])->effects['download'];
         $this->assertSame(125000.5, $this->bodyRows($this->readXlsx(base64_decode($download['content'])), __('Number'))[0][1]);
 
-        $this->assertArrayHasKey('salary', Livewire::test(UserIndex::class)->instance()->tableColumns());
-        $this->actingAs($this->user('data-entry', $company));
-        $this->assertArrayNotHasKey('salary', Livewire::test(UserIndex::class)->instance()->tableColumns());
+        $header = fn (): array => collect($this->readXlsx(base64_decode(Livewire::test(UserIndex::class)->call('exportTable', 'xlsx', 'all', ['name', 'salary'])->effects['download']['content'])))
+            ->first(fn (array $row): bool => ($row[0] ?? null) === __('Name'));
+        $this->assertSame([__('Name'), __('Monthly salary')], $header());
+        $viewer = $this->user('accountant', $company);
+        $viewer->forceFill(['denied_permissions' => ['users.update']])->save();
+        $this->actingAs($viewer->fresh());
+        $this->assertSame([__('Name')], $header());
     }
 
     public function test_print_page_is_prepared_for_and_shown_only_to_its_user(): void

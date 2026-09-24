@@ -1,5 +1,5 @@
 @props(['id', 'title', 'description' => null, 'submit' => null])
-{{-- Off-canvas sheet (bottom sheet on phones). Bind its open state with wire:model (or x-model); focus moves to the first [autofocus] field. With `submit`, the body and footer form one Livewire form. --}}
+{{-- Off-canvas sheet (bottom sheet on phones). Bind its open state with wire:model, or x-model to an Alpine variable not named `open` (the drawer's own state, which its footer buttons set); focus moves to the first [autofocus] field. With `submit`, the body and footer form one Livewire form. --}}
 @php($tag = $submit ? 'form' : 'div')
 <div x-data="{ open: false }" x-modelable="open" {{ $attributes->whereStartsWith(['wire:model', 'x-model']) }}>
     <div class="drawer-backdrop" x-show="open" x-cloak x-transition.opacity x-on:click="open = false"></div>

@@ -2,7 +2,7 @@
 {{-- Export & print options for a list using App\Livewire\Concerns\WithTableTools: format, which rows, which columns, orientation. --}}
 <div x-data="tableExport(@js(array_map('strval', array_keys($columns))))" x-on:open-table-export.window="show($event.detail?.scope ?? 'all')">
     <x-button variant="secondary" size="sm" icon="download" x-on:click="show('all')" aria-haspopup="dialog" :aria-controls="$id">{{ __('Export') }}</x-button>
-    <x-drawer :id="$id" x-model="open" :title="__('Export & print')" :description="__('Choose the format, the rows and the columns.')">
+    <x-drawer :id="$id" x-model="visible" :title="__('Export & print')" :description="__('Choose the format, the rows and the columns.')">
         <fieldset class="stack-sm"><legend>{{ __('Format') }}</legend>
             <div class="choice-grid">
                 <label class="choice"><input type="radio" value="xlsx" x-model="format"><span class="choice-emoji" aria-hidden="true">📗</span><span><strong>{{ __('Excel') }}</strong><span class="muted">{{ __('.xlsx workbook') }}</span></span></label>
@@ -29,7 +29,7 @@
             </div>
         </fieldset>
         <x-slot:footer>
-            <x-button x-on:click="run(@js($csv))" x-bind:disabled="busy || (format !== 'csv' && ! picked.length)" x-bind:data-loading="busy || null"><span x-text="format === 'print' ? @js(__('Print')) : @js(__('Download'))"></span></x-button>
+            <x-button x-on:click="run({{ \Illuminate\Support\Js::from($csv) }})" x-bind:disabled="busy || (format !== 'csv' && ! picked.length)" x-bind:data-loading="busy || null"><span x-text="format === 'print' ? @js(__('Print')) : @js(__('Download'))"></span></x-button>
             <x-button variant="ghost" x-on:click="open = false">{{ __('Cancel') }}</x-button>
         </x-slot:footer>
     </x-drawer>

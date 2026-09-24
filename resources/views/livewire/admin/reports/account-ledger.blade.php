@@ -16,7 +16,7 @@
             @if($report === null && $summary === null)
                 <x-empty-state emoji="📒" :title="__('Pick a period')" :description="__('Choose a valid period to see the ledger.')" />
             @elseif($summary !== null)
-                <p class="muted px-5 pb-3 max-sm:px-4">{{ __('Every account with a balance or entries in the period, including categories. Choose an account to see its lines.') }}</p>
+                <p class="muted px-5 pb-3 max-sm:px-4">{{ __('Every income and expense category with a balance or entries in the period. Choose an account to see its lines.') }}</p>
                 @if($summary['rows']->isEmpty())
                     <x-empty-state emoji="📒" :title="__('Nothing to show')" :description="__('No entries were posted in this period.')" />
                 @else
