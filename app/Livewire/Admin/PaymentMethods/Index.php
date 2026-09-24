@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\PaymentMethods;
 
+use App\Livewire\Concerns\WithFormSheet;
 use App\Models\Account;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
@@ -11,6 +12,8 @@ use Livewire\Component;
 
 class Index extends Component
 {
+    use WithFormSheet;
+
     public function render(): View
     {
         Gate::authorize('accounts.view');
@@ -31,5 +34,16 @@ class Index extends Component
             'balances' => $balances,
             'grandTotal' => $groups->sum('total'),
         ])->layout('layouts.admin');
+    }
+
+    protected function sheetRoute(): string
+    {
+        return 'admin.payment-methods.index';
+    }
+
+    /** @return list<string> */
+    protected function sheetsNeedingCompany(): array
+    {
+        return ['create'];
     }
 }

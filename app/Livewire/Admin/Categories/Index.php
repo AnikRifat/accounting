@@ -3,6 +3,7 @@
 namespace App\Livewire\Admin\Categories;
 
 use App\Enums\AccountType;
+use App\Livewire\Concerns\WithFormSheet;
 use App\Models\Account;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
@@ -11,13 +12,15 @@ use Livewire\Component;
 
 class Index extends Component
 {
+    use WithFormSheet;
+
     /** Opens a category of another company: selects that company in the header, then edits the category there. */
     public function editIn(int $accountId): void
     {
         Gate::authorize('accounts.manage');
         $category = Account::query()->categories()->whereIn('company_id', auth()->user()->accessibleCompanyIds())->findOrFail($accountId);
         app(CompanyContext::class)->select($category->company_id);
-        $this->redirectRoute('admin.categories.edit', ['category' => $category], navigate: true);
+        $this->redirectRoute('admin.categories.index', ['sheet' => 'edit:'.$category->id], navigate: true);
     }
 
     public function render(): View
@@ -36,5 +39,10 @@ class Index extends Component
                 ->groupBy(fn (Account $category): string => mb_strtolower($category->name))
                 ->map(fn ($rows) => $rows->sortBy(fn (Account $category): string => $category->company->name)->values())]),
         ])->layout('layouts.admin');
+    }
+
+    protected function sheetRoute(): string
+    {
+        return 'admin.categories.index';
     }
 }

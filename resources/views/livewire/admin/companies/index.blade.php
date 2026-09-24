@@ -13,7 +13,7 @@
                     <td><x-badge>{{ $company->code }}</x-badge></td>
                     <td class="nowrap">{{ $company->phone ?: '—' }}</td>
                     <td><x-badge.active :active="$company->is_active" /></td>
-                    <td><div class="row-actions">@can('companies.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.companies.edit', $company)" :label="__('Edit :name', ['name' => $company->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
+                    <td><div class="row-actions">@can('companies.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.companies.edit', $company)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $company->id }}')" :label="__('Edit :name', ['name' => $company->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
                 </tr>
             @empty
                 <x-table.empty colspan="5" emoji="🏢">{{ __('No companies found.') }}</x-table.empty>
@@ -21,4 +21,9 @@
         </x-table>
         {{ $companies->links() }}
     </x-card>
+    <x-sheet :label="__('Company')">
+        @if($this->sheetAction() === 'edit')
+            <livewire:admin.companies.form :company="\App\Models\Company::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :key="'sheet-'.$sheet" />
+        @endif
+    </x-sheet>
 </div>

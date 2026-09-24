@@ -47,7 +47,9 @@ class EmployeeCost extends Component
         return view('livewire.admin.reports.employee-cost', [
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
-            'range' => $range,
+            // Open ends (All time) are left out of the transactions link rather than passed as placeholder dates.
+            'transactionsRange' => $range === null ? [] : array_filter(['from' => $range[0], 'to' => $range[1]],
+                fn (string $date): bool => ! in_array($date, [self::EARLIEST_DATE, self::LATEST_DATE], true)),
             'scopeLabel' => $context->isAll() ? __('All companies') : $context->company()->name,
             'consolidated' => $context->isAll(),
             'rows' => $rows,

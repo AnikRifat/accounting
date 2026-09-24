@@ -35,13 +35,12 @@
                     @if($showDue)
                         <x-form.input name="dueDate" :label="__('Due date for the rest')" type="date" wire:model="dueDate" required />
                     @endif
-                    @if($showPayer)
-                        @if($canChoosePayer)
-                            <div wire:key="payer-{{ $companyId }}"><x-form.select name="paidBy" :label="$type === 'income' ? __('Received by') : __('Paid by')" wire:model="paidBy" :options="$payers" :help="__('Who handed over or took the money.')" /></div>
-                        @else
-                            <x-form.input name="payerName" :label="$type === 'income' ? __('Received by') : __('Paid by')" :value="$payerName" disabled :help="$paidBy === (string) auth()->id() ? __('Recorded as you. Only the super admin can change it.') : __('Only the super admin can change it.')" />
-                        @endif
+                    @if($canChoosePayer)
+                        <div wire:key="payer-{{ $companyId }}"><x-form.select name="paidBy" :label="$type === 'income' ? __('Received by') : __('Paid by')" wire:model="paidBy" :options="$payers" required :help="__('Who handed over or took the money.')" /></div>
+                    @else
+                        <x-form.input name="payerName" :label="$type === 'income' ? __('Received by') : __('Paid by')" :value="$payerName" disabled required :help="$paidBy === (string) auth()->id() ? __('Recorded as you. Only the super admin can change it.') : __('Only the super admin can change it.')" />
                     @endif
+                    <x-form.input name="recorderName" :label="__('Recorded by')" :value="$recorderName" disabled :help="$entryId ? __('Who created this entry.') : __('You, when you save.')" />
                 </div>
             </x-card>
         @endif

@@ -35,8 +35,8 @@ class Dues extends Component
     public bool $overdue = false;
 
     /**
-     * Opens a party's statement. A statement needs one company, so in All mode this switches the header context to
-     * the party's company first; the party must belong to a company in the current scope.
+     * Opens a party's statement in the party's company: in All mode this switches the header context to that company
+     * first. The party must belong to a company in the current scope.
      */
     public function openStatement(int $partyId): Redirector|RedirectResponse
     {

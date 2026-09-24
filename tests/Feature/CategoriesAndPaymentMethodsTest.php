@@ -97,7 +97,7 @@ class CategoriesAndPaymentMethodsTest extends TestCase
         $this->assertStringNotContainsString('Hidden Ltd', $html);
 
         $rent = $second->accounts()->where('name', 'Office Rent')->sole();
-        Livewire::test(CategoryIndex::class)->call('editIn', $rent->id)->assertRedirect(route('admin.categories.edit', $rent));
+        Livewire::test(CategoryIndex::class)->call('editIn', $rent->id)->assertRedirect(route('admin.categories.index', ['sheet' => 'edit:'.$rent->id]));
         $this->assertSame($second->id, app(CompanyContext::class)->selectedId());
         $this->get('/admin/categories')->assertOk()->assertSee('<strong>Office Rent</strong>', false)->assertDontSee('<th>'.__('Companies').'</th>', false);
 

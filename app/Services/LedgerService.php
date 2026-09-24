@@ -62,6 +62,9 @@ class LedgerService
     /** Upper bound of one entry: the largest amount App\Support\Money accepts as input. */
     public const MAX_AMOUNT = 9_999_999_999_999;
 
+    /** Concurrent writers can deadlock on InnoDB gap locks; Laravel retries the whole transaction this many times. */
+    private const DEADLOCK_ATTEMPTS = 3;
+
     public function createDefaultAccounts(Company $company): void
     {
         foreach (self::DEFAULT_CHART as [$code, $name, $type, $isCash, $isSystem, $paymentType]) {
@@ -107,7 +110,8 @@ class LedgerService
      *
      * Income/expense data: entry_date (Y-m-d), amount (total, paisa), paid_amount (0…amount),
      * category_account_id, payment_account_id (required when paid_amount > 0), party_id and due_date
-     * (both required when paid_amount < amount), paid_by? (user id; see payerId()), description?, reference?.
+     * (both required when paid_amount < amount), paid_by? (user id; see payerId(); always recorded, even when nothing
+     * is paid now), description?, reference?.
      * Transfer/opening data: entry_date, amount, debit_account_id, credit_account_id, description?, reference?.
      *
      * @param  array<string, mixed>  $data
@@ -129,7 +133,7 @@ class LedgerService
             $this->post($entry, $data, $actor);
 
             return $entry;
-        });
+        }, self::DEADLOCK_ATTEMPTS);
     }
 
     /** Posts an opening balance for a payment method against Opening Balance Equity. */
@@ -145,7 +149,7 @@ class LedgerService
      * Records a receipt (for an income bill) or payment (for an expense bill) against a bill's
      * outstanding balance. The settlement takes its party from the bill.
      *
-     * @param  array{entry_date: string, amount: int, payment_account_id: int, description?: ?string, reference?: ?string}  $data
+     * @param  array{entry_date: string, amount: int, payment_account_id: int, paid_by?: ?int, description?: ?string, reference?: ?string}  $data  paid_by: who paid or received the money (see payerId())
      *
      * @throws ValidationException|AuthorizationException
      */
@@ -166,7 +170,7 @@ class LedgerService
             $this->post($entry, $data, $actor);
 
             return $entry;
-        });
+        }, self::DEADLOCK_ATTEMPTS);
     }
 
     /**
@@ -180,9 +184,14 @@ class LedgerService
     public function update(JournalEntry $entry, array $data, User $actor): JournalEntry
     {
         $this->authorize($actor, 'entries.update', $entry->company_id);
+        if ($entry->type === EntryType::Opening) {
+            // Opening balances move payment-method balances and equity, so editing needs the same ability as recording.
+            $this->authorize($actor, 'accounts.manage', $entry->company_id);
+        }
 
         return DB::transaction(function () use ($entry, $data, $actor): JournalEntry {
-            $billId = JournalEntry::query()->whereKey($entry->id)->value('bill_id');
+            // bill_id never changes, so no pre-lock read is needed (it would fix a stale InnoDB snapshot).
+            $billId = $entry->bill_id;
             if ($billId !== null) {
                 // Lock order bill → settlement, the same as settle(), so concurrent writers can't deadlock.
                 JournalEntry::query()->lockForUpdate()->findOrFail($billId);
@@ -195,7 +204,7 @@ class LedgerService
             $this->post($locked, $data, $actor);
 
             return $locked;
-        });
+        }, self::DEADLOCK_ATTEMPTS);
     }
 
     /**
@@ -221,7 +230,7 @@ class LedgerService
             $locked->forceFill(['voided_at' => now(), 'voided_by' => $actor->id, 'void_reason' => $reason])->save();
 
             return $locked;
-        });
+        }, self::DEADLOCK_ATTEMPTS);
     }
 
     /** Outstanding paisa of a bill: its receivable/payable line minus posted settlements (0 for other entries). */
@@ -357,7 +366,7 @@ class LedgerService
         $keep = $entry->exists ? $entry->lines()->pluck('account_id')->map(fn (mixed $value): int => (int) $value)->all() : [];
         [$attributes, $lines] = match (true) {
             $entry->type->isBill() => $this->billPosting($entry, $data, $keep, $actor),
-            $entry->type->isSettlement() => $this->settlementPosting($entry, $data, $keep),
+            $entry->type->isSettlement() => $this->settlementPosting($entry, $data, $keep, $actor),
             default => $this->simplePosting($entry, $data, $keep),
         };
         $entry->fill($attributes + [
@@ -400,7 +409,7 @@ class LedgerService
                 fn (Account $account): bool => $account->isPaymentMethod(), __('Choose a payment method.'));
         }
         $partyId = $this->partyId($entry, $data['party_id'] ?? null, $errors);
-        $payerId = $paid > 0 ? $this->payerId($entry, $data['paid_by'] ?? null, $actor, $errors) : null;
+        $payerId = $this->payerId($entry, $data['paid_by'] ?? null, $actor, $errors);
         if ($unpaid > 0) {
             if ($partyId === null && ! isset($errors['party_id'])) {
                 $errors['party_id'] = __('Choose who owes or is owed the unpaid amount.');
@@ -418,7 +427,7 @@ class LedgerService
             if ($partyId === null || $partyId !== (int) $entry->getOriginal('party_id')) {
                 $errors['party_id'] = __('The party can\'t change once receipts or payments are recorded.');
             }
-            $firstSettlement = JournalEntry::query()->where('bill_id', $entry->id)->posted()->min('entry_date');
+            $firstSettlement = JournalEntry::query()->where('bill_id', $entry->id)->posted()->lockForUpdate()->min('entry_date');
             if ($data['entry_date'] > $firstSettlement) {
                 $errors['entry_date'] = __('The date can\'t be after the first receipt or payment.');
             }
@@ -442,14 +451,16 @@ class LedgerService
      * @param  list<int>  $keep
      * @return array{0: array<string, mixed>, 1: list<array{account_id: int, debit: int, credit: int}>}
      */
-    private function settlementPosting(JournalEntry $entry, array $data, array $keep): array
+    private function settlementPosting(JournalEntry $entry, array $data, array $keep, User $actor): array
     {
         $data = $this->validate($data, [
             'amount' => ['required', 'integer', 'min:1', 'max:'.self::MAX_AMOUNT],
             'payment_account_id' => ['required', 'integer'],
+            'paid_by' => ['nullable', 'integer'],
         ]);
-        $bill = JournalEntry::query()->findOrFail($entry->bill_id);
+        $bill = JournalEntry::query()->lockForUpdate()->findOrFail($entry->bill_id);
         $errors = [];
+        $payerId = $this->payerId($entry, $data['paid_by'] ?? null, $actor, $errors);
         $method = $this->account($entry, $data['payment_account_id'], $keep, 'payment_account_id', $errors,
             fn (Account $account): bool => $account->isPaymentMethod(), __('Choose a payment method.'));
         $available = $this->outstanding($bill) + ($entry->exists ? (int) $entry->getOriginal('amount') : 0);
@@ -464,7 +475,7 @@ class LedgerService
         [$debit, $credit] = $entry->type === EntryType::Receipt ? [$method, $counterpart] : [$counterpart, $method];
         $amount = (int) $data['amount'];
 
-        return [['entry_date' => $data['entry_date'], 'amount' => $amount, 'party_id' => $bill->party_id, 'due_date' => null], [
+        return [['entry_date' => $data['entry_date'], 'amount' => $amount, 'party_id' => $bill->party_id, 'due_date' => null, 'paid_by' => $payerId], [
             ['account_id' => $debit->id, 'debit' => $amount, 'credit' => 0],
             ['account_id' => $credit->id, 'debit' => 0, 'credit' => $amount],
         ]];

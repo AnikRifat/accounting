@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\EntryExportController;
+use App\Http\Controllers\Admin\PrintTableController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Livewire\Admin\Accounts\Form as AccountForm;
 use App\Livewire\Admin\Accounts\Index as AccountIndex;
@@ -49,6 +50,7 @@ Route::post('/admin/logout', function (Request $request) {
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access'])->group(function (): void {
     Route::livewire('/', Dashboard::class)->middleware('can:dashboard.view')->name('dashboard');
     Route::livewire('/choose-company', ChooseCompany::class)->name('choose-company');
+    Route::get('/print/{token}', PrintTableController::class)->where('token', '[A-Za-z0-9]{40}')->name('print');
     Route::livewire('/users', UserIndex::class)->middleware('can:users.view')->name('users.index');
     Route::livewire('/users/create', UserForm::class)->middleware('can:users.create')->name('users.create');
     Route::livewire('/users/{user}/edit', UserForm::class)->middleware('can:users.update')->name('users.edit');

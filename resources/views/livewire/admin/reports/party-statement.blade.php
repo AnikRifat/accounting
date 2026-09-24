@@ -1,11 +1,9 @@
 <div class="page">
-    <x-page-header :title="__('Party statement')" :description="collect([$selectedCompany?->name, $selectedParty ? $selectedParty->name.($selectedParty->phone ? ' ('.$selectedParty->phone.')' : '') : null, $periodLabel])->filter()->join(' · ')" :back="route('admin.reports.index')" :back-label="__('Reports')">
+    <x-page-header :title="__('Party statement')" :description="collect([$scopeLabel, $selectedParty ? $selectedParty->name.($selectedParty->phone ? ' ('.$selectedParty->phone.')' : '') : null, $periodLabel])->filter()->join(' · ')" :back="route('admin.reports.index')" :back-label="__('Reports')">
         <x-slot:actions><x-button variant="secondary" icon="printer" class="no-print" onclick="window.print()">{{ __('Print') }}</x-button></x-slot:actions>
     </x-page-header>
     @if(! $hasCompanies)
         <x-card><x-empty-state emoji="🔒" :title="__('No company yet')" :description="__('You are not assigned to any company yet.')" /></x-card>
-    @elseif($selectedCompany === null)
-        <x-card><x-empty-state emoji="🏢" :title="__('Choose a company')" :description="__('A party statement belongs to one company. Choose a company to see its parties.')"><x-button :href="$chooseCompanyUrl">{{ __('Choose a company') }}</x-button></x-empty-state></x-card>
     @else
         <x-card flush>
             <x-slot:toolbar>
@@ -16,8 +14,32 @@
                     <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />
                 </x-toolbar>
             </x-slot:toolbar>
-            @if($report === null)
-                <x-empty-state emoji="🤝" :title="$selectedParty ? __('Pick a period') : __('Pick a party')" :description="$selectedParty ? __('Choose a valid period to see the statement.') : __('Choose a party to see its statement.')" />
+            @if($report === null && $summary === null)
+                <x-empty-state emoji="🤝" :title="__('Pick a period')" :description="__('Choose a valid period to see the statement.')" />
+            @elseif($summary !== null)
+                <p class="muted px-5 pb-3 max-sm:px-4">{{ __('Every party with a due or entries in the period. Debit raises what the party owes us; credit lowers it. A positive balance is owed to us, a negative balance is owed by us. Choose a party to see its entries.') }}</p>
+                @if($summary['rows']->isEmpty())
+                    <x-empty-state emoji="🤝" :title="__('Nothing to show')" :description="__('No party has posted entries in this period.')" />
+                @else
+                    <x-table :caption="__('Party statement')">
+                        <x-slot:head><th scope="col">{{ __('Party') }}</th>@if($consolidated)<th scope="col">{{ __('Company') }}</th>@endif @if($showOpening)<th scope="col" class="num">{{ __('Opening due') }}</th>@endif<th scope="col" class="num">{{ __('Debit') }}</th><th scope="col" class="num">{{ __('Credit') }}</th><th scope="col" class="num">{{ __('Closing due') }}</th></x-slot:head>
+                        @foreach($summary['rows'] as $row)
+                            <tr wire:key="party-summary-{{ $row['party']->id }}">
+                                <th scope="row" class="row-label"><button type="button" class="text-link" wire:click="$set('party', '{{ $row['party']->id }}')">{{ $row['party']->name }}</button>@if($row['party']->phone)<p class="muted">{{ $row['party']->phone }}</p>@endif</th>
+                                @if($consolidated)<td>{{ $row['party']->company->code }}</td>@endif
+                                @if($showOpening)<td class="num"><x-money :value="$row['opening']" /></td>@endif
+                                <td class="num"><x-money :value="$row['debit']" /></td>
+                                <td class="num"><x-money :value="$row['credit']" /></td>
+                                <td class="num"><x-money :value="$row['closing']" /></td>
+                            </tr>
+                        @endforeach
+                        <x-slot:foot><tr class="grand-total-row"><th scope="row" colspan="{{ $consolidated ? 2 : 1 }}">{{ __('Total') }}</th>
+                            @if($showOpening)<td class="num"><x-money :value="$summary['opening']" /></td>@endif
+                            <td class="num"><x-money :value="$summary['debit']" /></td>
+                            <td class="num"><x-money :value="$summary['credit']" /></td>
+                            <td class="num"><x-money :value="$summary['closing']" /></td></tr></x-slot:foot>
+                    </x-table>
+                @endif
             @else
                 <div class="stack-sm px-5 pb-3 max-sm:px-4">
                     <p class="muted">{{ __('Debit raises what the party owes us; credit lowers it. A positive balance is owed to us, a negative balance is owed by us.') }}</p>
@@ -25,7 +47,7 @@
                 </div>
                 <x-table :caption="__('Party statement')">
                     <x-slot:head><th scope="col">{{ __('Date') }}</th><th scope="col">{{ __('Number') }}</th><th scope="col">{{ __('Type') }}</th><th scope="col">{{ __('Description') }}</th><th scope="col" class="num">{{ __('Debit') }}</th><th scope="col" class="num">{{ __('Credit') }}</th><th scope="col" class="num">{{ __('Balance') }}</th></x-slot:head>
-                    <tr class="total-row"><th scope="row" colspan="6">{{ __('Opening due') }}</th><td class="num"><x-money :value="$report['opening']" /></td></tr>
+                    @if($showOpening)<tr class="total-row"><th scope="row" colspan="6">{{ __('Opening due') }}</th><td class="num"><x-money :value="$report['opening']" /></td></tr>@endif
                     @forelse($report['rows'] as $row)
                         <tr wire:key="statement-{{ $row['entry']->id }}">
                             <td class="nowrap">{{ $row['entry']->entry_date->format('d M Y') }}</td>

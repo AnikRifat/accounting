@@ -216,7 +216,7 @@ class Form extends Component
             'paidAmount' => ['required', 'string', $money(true)],
             'paymentAccountId' => ['nullable', 'integer'],
             'dueDate' => ['nullable', 'date_format:Y-m-d'],
-            'paidBy' => ['nullable', 'integer'],
+            'paidBy' => ['required', 'integer'],
         ] : [
             'debitAccountId' => ['required', 'integer'],
             'creditAccountId' => ['required', 'integer'],
@@ -272,7 +272,8 @@ class Form extends Component
         $total = Money::isValidInput($this->amount) ? Money::toPaisa($this->amount) : 0;
         $paid = Money::isValidInput($this->paidAmount) ? Money::toPaisa($this->paidAmount) : $total;
         $company = $companyId ? Company::query()->find($companyId, ['id', 'name', 'is_active']) : null;
-        $currentFile = $this->entryId ? JournalEntry::query()->find($this->entryId)?->getMedia(JournalEntry::REFERENCE_FILE)->first() : null;
+        $stored = $this->entryId ? JournalEntry::query()->with('creator:id,name')->find($this->entryId) : null;
+        $currentFile = $stored?->getMedia(JournalEntry::REFERENCE_FILE)->first();
 
         return view('livewire.admin.entries.form', [
             'isBill' => $type->isBill(),
@@ -281,10 +282,10 @@ class Form extends Component
             'methods' => $methods,
             'parties' => $type->isBill() ? $this->partyOptions($companyId) : [],
             'showDue' => $type->isBill() && $paid < $total,
-            'showPayer' => $type->isBill() && $paid > 0,
             'canChoosePayer' => auth()->user()->isRoot(),
             'payers' => $type->isBill() ? $this->payerOptions($companyId) : [],
             'payerName' => User::query()->whereKey((int) $this->paidBy)->value('name'),
+            'recorderName' => $stored ? $stored->creator?->name : auth()->user()->name,
             'currentFile' => $currentFile,
             'currentFileUrl' => $currentFile ? app(MediaService::class)->url($currentFile) : null,
             'settled' => $settled,

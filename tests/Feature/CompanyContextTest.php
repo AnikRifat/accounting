@@ -126,6 +126,11 @@ class CompanyContextTest extends TestCase
         foreach (['https://evil.test/admin/x', '//evil.test/admin/', '/admin//evil.test', '/logout'] as $next) {
             Livewire::withQueryParams(['next' => $next])->test(ChooseCompany::class)->call('choose', $active->id)->assertRedirect(route('admin.dashboard'));
         }
-        Livewire::test(ChooseCompany::class)->call('choose', $inactive->id)->assertNotFound();
+        Livewire::withQueryParams(['next' => '/admin/entries/create/income'])->test(ChooseCompany::class)->call('choose', $inactive->id)->assertNotFound();
+
+        // Reports can open a closed company's books.
+        Livewire::withQueryParams(['next' => '/admin/reports/account-ledger'])->test(ChooseCompany::class)
+            ->assertSee($inactive->name)->call('choose', $inactive->id)->assertRedirect('/admin/reports/account-ledger');
+        $this->assertSame($inactive->id, app(CompanyContext::class)->selectedId());
     }
 }

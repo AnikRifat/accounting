@@ -3,8 +3,8 @@
     $scrollSnippet = $scrollTo !== false ? "(\$el.closest('{$scrollTo}') || document.querySelector('{$scrollTo}')).scrollIntoView()" : '';
     $pageName = $paginator->getPageName();
 @endphp
-{{-- App-wide Livewire pagination (overrides livewire::tailwind): result count on the left, pages on the right. --}}
-<div>
+{{-- App-wide Livewire pagination (overrides livewire::tailwind): result count on the left, pages on the right. Sticks to the bottom of the screen while its table is in view. --}}
+<div class="pagination-wrap">
     @if($paginator->hasPages())
         <nav class="pagination" role="navigation" aria-label="{{ __('Pagination navigation') }}">
             <p class="muted">{{ __('Showing :first–:last of :total', ['first' => $paginator->firstItem(), 'last' => $paginator->lastItem(), 'total' => $paginator->total()]) }}</p>

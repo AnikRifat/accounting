@@ -21,8 +21,8 @@ use RuntimeException;
 
 /**
  * Local demo data: 4 companies with about six months of bills (mostly paid, some on credit and settled later,
- * a few overdue), transfers and salaries, and three sign-ins sharing one password that is generated per run and
- * printed once. Runs only in the local or testing environment and only on empty books (no company and no user),
+ * a few overdue), transfers and salaries, and three sign-ins sharing the fixed demo password `password`.
+ * Runs only in the local or testing environment and only on empty books (no company and no user),
  * so it can never touch real data or reset a password. Run with `composer demo` or `php artisan migrate:fresh --seed`.
  */
 class DemoSeeder extends Seeder
@@ -113,7 +113,7 @@ class DemoSeeder extends Seeder
 
         $this->command?->info("Demo data created: {$summary['companies']} companies, {$summary['parties']} parties, {$summary['entries']} entries "
             ."(2 voided), {$summary['open']} open bills ({$summary['overdue']} overdue), {$summary['settled']} bills with later receipts or payments.");
-        $this->command?->line('Sign in at /admin/login. The password is shown once and is not stored anywhere else:');
+        $this->command?->line('Sign in at /admin/login with the demo password (local only):');
         $this->command?->line('  Owner       '.self::OWNER_EMAIL);
         $this->command?->line('  Accountant  '.self::ACCOUNTANT_EMAIL.' (Meghna Traders Ltd., Jamuna Soft Ltd.)');
         $this->command?->line('  Data entry  '.self::DATA_ENTRY_EMAIL.' (Shapla Kitchen & Restaurant)');

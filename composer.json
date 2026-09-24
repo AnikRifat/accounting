@@ -14,7 +14,8 @@
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.35",
-        "livewire/livewire": "^4.4"
+        "livewire/livewire": "^4.4",
+        "openspout/openspout": "^5.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -42,6 +43,7 @@
         "setup": [
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
             "@php artisan migrate --no-interaction",
             "npm ci",
             "npm run build"

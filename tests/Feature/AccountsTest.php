@@ -64,7 +64,7 @@ class AccountsTest extends TestCase
         $this->assertCount(1, $component->viewData('groups')['asset']->where('name', 'Cash in Hand'));
 
         $betaRent = $beta->accounts()->where('code', '5100')->sole();
-        $component->call('edit', $betaRent->id)->assertRedirect(route('admin.accounts.edit', $betaRent));
+        $component->call('edit', $betaRent->id)->assertRedirect(route('admin.accounts.index', ['sheet' => 'edit:'.$betaRent->id]));
         $this->assertSame($beta->id, app(CompanyContext::class)->selectedId());
         try {
             Livewire::test(Index::class)->call('edit', $hidden->accounts()->where('code', '5100')->sole()->id);

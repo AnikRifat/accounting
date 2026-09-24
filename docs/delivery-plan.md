@@ -18,7 +18,7 @@ setup and handover. Deployment itself is excluded.
 | Money | BDT only. No inter-company transfer feature; money moved between companies is recorded as expense in one and income in the other. |
 | Hosting | cPanel shared hosting with MySQL/MariaDB. No Node, queue worker or long-running process at runtime; assets are built before upload. |
 | UI language | English. Every user-facing string goes through `__()` with the English text as the key, so a Bangla `lang/bn.json` can be added later without code changes. |
-| Super admin | Owner login email `superadmin@gmail.com` (used by the demo seeder; for a real install, create it with `php artisan app:create-admin`). No default password anywhere. `DatabaseSeeder` calls `DemoSeeder` (Anik's edit), so the seeder itself must refuse outside local/testing and on non-empty books. |
+| Super admin | Owner login email `superadmin@gmail.com` (used by the demo seeder; for a real install, create it with `php artisan app:create-admin`). No default password on real installs; the local-only demo seeder uses the fixed password `password` (Anik's decision). `DatabaseSeeder` calls `DemoSeeder` (Anik's edit), so the seeder itself must refuse outside local/testing and on non-empty books. |
 | Entry form (revision, 2026-09-24) | Income/expense entries use **Category** (dynamic income/expense categories), **Party** (who paid, received or was spent on), **Payment method** (Cash, Bank, bKash, …) and support **partial payment**: total amount, amount paid now, and a due date for the remainder, settled later by any number of payments. The "Income account" and "Received into" fields are removed. |
 | Parties | Per company. Every employee is automatically a party in their company; custom parties can be added. |
 | Dues basis | Accrual: income and expenses count in full on the entry date. The unpaid part is a receivable or payable against the party until settled. |
@@ -63,7 +63,8 @@ account that receives or pays money), is_system (not editable), is_active, times
 
 `journal_entries`: id, company_id FK, number (unique per company, `<CODE>-000001`), entry_date,
 type `income|expense|transfer|opening` (enum `App\Enums\EntryType`), amount BIGINT paisa,
-description?, reference?, employee_id? FK, created_by, updated_by?, voided_at?, voided_by?,
+description?, reference?, paid_by FK users (income/expense/receipt/payment: who paid or received; required,
+defaults to the recorder, only the super admin picks another), created_by, updated_by?, voided_at?, voided_by?,
 void_reason?, timestamps. Index on (company_id, entry_date).
 
 `journal_lines`: id, journal_entry_id FK cascade, account_id FK, debit BIGINT, credit BIGINT
@@ -270,8 +271,9 @@ Rules for every module:
 | 7d | Reports, Dashboard | agent `reports` | done: context-scoped; consolidated trial balance; ledger/party statement ask for a company in All mode |
 | 7e | New company from the header (Anik): "+ New company" beside the switcher and "Add company" on the Companies list both open one off-canvas drawer (`App\Livewire\CreateCompanyDrawer`, event `open-create-company`); shared `Company::formRules()` / `Company::createBy()` | coordinator | done: 2 tests; switches the header to the new company |
 | 6-mysql | Rebuild local MySQL `frish` with `migrate:fresh --seed` (Anik approved 2026-09-24) and re-check the dues queries on MySQL | coordinator | done: 589 entries balanced (2–3 lines each), all 4 trial balances balance, AR/AP equal dues totals per company, 13 pages render in All and single-company mode on MySQL 9.7 |
-| 7-review | Read-only review of increments 5 and 7 (excluding increment 8 areas) | agent `review-5-7` | in progress |
+| 7-review | Read-only review of increments 5 and 7 (excluding increment 8 areas) | agent `review-5-7` + coordinator fixes | done: 8 findings. Fixed: (1, security) opening-balance edits need accounts.manage; (2) locking reads for bill/first-settlement dates; (3) deadlock retries (3 attempts) on ledger writes; (4) All-mode name merge case/space-insensitive in trial balance and income statement; (5) header switch keeps the page query string (same-site admin Referer only); (6) chooser lists inactive companies for report targets. Open: (7) duplicate-name races in category/payment-method/quick-add forms return 500 (low); (8) select/drawer a11y gaps relayed to frish-79. Suite 181/181. |
 | 8 | Employees become users (staff fields on `users`, one party per assigned company via `User::syncParties()`, single super admin via `Gate::before`, editable system roles) | session frish-5f | done (commit 20607fc); 177/178 green; the 1 failure is DemoSeederTest asserting the owner password is not 'password', which conflicts with Anik's local edit setting the demo password to 'password' |
+| 9 | Transactions list: "Paid / received by" (Anik) | coordinator (backend) + frish-79 (view, filter drawer) | backend done: `payer` #[Url] filter, `$payers` options (only users who handled money in scope), `payer` eager-load, CSV column and `?payer=`; receipts/payments now record `paid_by` (same payerId() rule); PayerFilterTest; 182/182. Filters move to an off-canvas drawer in frish-79's phase-2 table pattern. |
 | 6 | Final review, behavior verification, handover (AGENTS.md and README done; refresh for increment 5) | coordinator + agents | last |
 
 ## Acceptance criteria

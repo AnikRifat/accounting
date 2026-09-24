@@ -411,13 +411,14 @@ class EntriesTest extends TestCase
         $csv = $this->get(route('admin.entries.export'))->assertOk()->assertHeader('content-type', 'text/csv; charset=UTF-8')->streamedContent();
         $rows = array_map(str_getcsv(...), explode("\n", trim(substr($csv, 3))));
 
-        $this->assertSame(['Number', 'Date', 'Company', 'Type', 'Party', 'Category', 'Payment method', 'Total (BDT)', 'Paid (BDT)', 'Due (BDT)', 'Due date', 'Due status',
+        $this->assertSame(['Number', 'Date', 'Company', 'Type', 'Party', 'Category', 'Payment method', 'Total (BDT)', 'Paid (BDT)', 'Paid / received by', 'Due (BDT)', 'Due date', 'Due status',
             'Bill number', 'Description', 'Reference', 'Status', 'Void reason', 'Created by'], $rows[0]);
         $this->assertCount(4, $rows);
-        $this->assertSame(['Expense', "'=HYPERLINK(\"e\")", "'=5100 · Office Rent", '1000 · Cash in Hand', '25000.00', '13000.00', '12000.00', '2026-09-30', 'Partly paid', '', "'=HYPERLINK(\"x\")", "'+1+1", 'Posted', "'@SUM(A1)"],
-            array_values(array_intersect_key($rows[1], array_flip([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17]))));
-        $this->assertSame(['Payment', '1010 · Bank Account', '8000.00', '8000.00', $bill->number], [$rows[2][3], $rows[2][6], $rows[2][7], $rows[2][8], $rows[2][12]]);
-        $this->assertSame([$payment->number, 'Voided', "'-2+3", ''], [$rows[2][0], $rows[3][15], $rows[3][16], $rows[3][11]]);
+        $this->assertSame(['Expense', "'=HYPERLINK(\"e\")", "'=5100 · Office Rent", '1000 · Cash in Hand', '25000.00', '13000.00', "'@SUM(A1)", '12000.00', '2026-09-30', 'Partly paid', '', "'=HYPERLINK(\"x\")", "'+1+1", 'Posted', "'@SUM(A1)"],
+            array_values(array_intersect_key($rows[1], array_flip([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18]))));
+        // A later payment records who paid it too (the acting user by default).
+        $this->assertSame(['Payment', '1010 · Bank Account', '8000.00', '8000.00', "'@SUM(A1)", $bill->number], [$rows[2][3], $rows[2][6], $rows[2][7], $rows[2][8], $rows[2][9], $rows[2][13]]);
+        $this->assertSame([$payment->number, 'Voided', "'-2+3", ''], [$rows[2][0], $rows[3][16], $rows[3][17], $rows[3][12]]);
         $this->assertStringNotContainsString('Secret income', $csv);
 
         $filtered = $this->get(route('admin.entries.export', ['status' => 'partly_paid', 'company' => [$other->id]]))->assertOk()->streamedContent();
@@ -448,7 +449,7 @@ class EntriesTest extends TestCase
         $this->assertStringNotContainsString('Hidden sale', $crafted);
     }
 
-    public function test_the_payer_is_the_recorder_and_only_the_super_admin_can_choose_another(): void
+    public function test_the_payer_is_required_defaults_to_the_recorder_and_only_the_super_admin_can_choose_another(): void
     {
         [$company, $other] = Company::factory()->count(2)->create();
         $clerk = $this->user('data-entry', $company);
@@ -460,13 +461,15 @@ class EntriesTest extends TestCase
             ->set('categoryAccountId', $this->accountId($company, '5100'))->set('amount', '500');
 
         $this->actingAs($clerk);
-        $expense()->assertSet('paidBy', (string) $clerk->id)->assertSee(__('Recorded as you. Only the super admin can change it.'))
+        Livewire::test(Form::class, ['type' => 'income'])->assertSee(__('Received by'))->assertSee(__('Recorded by'));
+        $expense()->assertSet('paidBy', (string) $clerk->id)->assertSee(__('Paid by'))->assertSee(__('Recorded as you. Only the super admin can change it.'))
             ->set('paidBy', (string) $accountant->id)->call('save')->assertHasNoErrors();
         $entry = JournalEntry::sole();
         $this->assertSame($clerk->id, $entry->paid_by);
 
         $this->actingAs($accountant);
-        Livewire::test(Form::class, ['entry' => $entry])->assertSet('paidBy', (string) $clerk->id)->set('amount', '600')->call('save')->assertHasNoErrors();
+        Livewire::test(Form::class, ['entry' => $entry])->assertSet('paidBy', (string) $clerk->id)->assertViewHas('recorderName', $clerk->name)
+            ->set('amount', '600')->call('save')->assertHasNoErrors();
         $this->assertSame($clerk->id, $entry->refresh()->paid_by);
 
         $this->actingAs($owner);
@@ -474,11 +477,13 @@ class EntriesTest extends TestCase
             ->set('paidBy', (string) $outsider->id)->call('save')->assertHasErrors('paidBy')
             ->set('paidBy', (string) $accountant->id)->call('save')->assertHasNoErrors();
         $this->assertSame($accountant->id, $entry->refresh()->paid_by);
+        $this->assertSame($clerk->id, $entry->created_by);
+        $expense()->set('paidBy', '')->call('save')->assertHasErrors(['paidBy' => 'required']);
         $expense()->assertSet('paidBy', (string) $owner->id)->call('save')->assertHasNoErrors();
         $this->assertSame($owner->id, JournalEntry::latest('id')->first()->paid_by);
 
         $due = $this->dueBill($company, EntryType::Expense, 700, $clerk);
-        $this->assertNull($due->paid_by);
+        $this->assertSame($clerk->id, $due->paid_by);
     }
 
     public function test_a_reference_file_is_optional_and_can_be_attached_replaced_and_removed(): void

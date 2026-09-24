@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Users;
 
+use App\Livewire\Concerns\WithFormSheet;
 use App\Support\CompanyContext;
 use App\Support\Permissions;
 use Illuminate\Contracts\View\View;
@@ -12,7 +13,7 @@ use Livewire\WithPagination;
 /** Employees the actor may manage; with one company in the header, those assigned to it and those not assigned to any company yet. */
 class Index extends Component
 {
-    use WithPagination;
+    use WithFormSheet, WithPagination;
 
     public string $search = '';
 
@@ -42,5 +43,10 @@ class Index extends Component
                 ->orderBy('name')->paginate(15),
             'permissions' => app(Permissions::class),
         ])->layout('layouts.admin');
+    }
+
+    protected function sheetRoute(): string
+    {
+        return 'admin.users.index';
     }
 }

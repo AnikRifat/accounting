@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Parties')" :description="__('Customers, suppliers and everyone else who pays, receives or is spent on. Every employee is a party of each company they are assigned to.')">
-        @can('parties.create')<x-slot:actions><x-button icon="plus" :href="route('admin.parties.create')">{{ __('Add party') }}</x-button></x-slot:actions> @endcan
+        @can('parties.create')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ __('Add party') }}</x-button></x-slot:actions> @endcan
     </x-page-header>
     <x-card flush>
         <x-slot:toolbar>
@@ -23,9 +23,9 @@
                     <td><div class="row-actions">
                         @if(! $showCompany)@can('reports.view')<x-button variant="ghost" size="sm" icon="eye" :href="route('admin.reports.party-statement', ['party' => $party->id])" :label="__('Statement of :name', ['name' => $party->name])" />@endcan @endif
                         @if($party->isEmployee())
-                            @can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $party->user_id)" :label="__('Edit employee :name', ['name' => $party->name])">{{ __('Edit employee') }}</x-button>@endcan
+                            @can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.index', ['sheet' => 'edit:'.$party->user_id])" :label="__('Edit employee :name', ['name' => $party->name])">{{ __('Edit employee') }}</x-button>@endcan
                         @else
-                            @can('parties.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.parties.edit', $party)" :label="__('Edit :name', ['name' => $party->name])">{{ __('Edit') }}</x-button>@endcan
+                            @can('parties.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.parties.edit', $party)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $party->id }}')" :label="__('Edit :name', ['name' => $party->name])">{{ __('Edit') }}</x-button>@endcan
                         @endif
                     </div></td>
                 </tr>
@@ -35,4 +35,11 @@
         </x-table>
         {{ $parties->links() }}
     </x-card>
+    <x-sheet :label="__('Party')">
+        @if($this->sheetAction() === 'create')
+            <livewire:admin.parties.form :key="'sheet-'.$sheet" />
+        @elseif($this->sheetAction() === 'edit')
+            <livewire:admin.parties.form :party="\App\Models\Party::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :key="'sheet-'.$sheet" />
+        @endif
+    </x-sheet>
 </div>

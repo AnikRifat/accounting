@@ -193,7 +193,7 @@ class JournalEntry extends Model
     /**
      * Applies list filters; malformed values are ignored. Company scope comes from visibleTo() and CompanyContext, never from here.
      *
-     * @param  array{from?: mixed, to?: mixed, type?: mixed, account?: mixed, party?: mixed, status?: mixed, search?: mixed}  $filters
+     * @param  array{from?: mixed, to?: mixed, type?: mixed, account?: mixed, party?: mixed, payer?: mixed, status?: mixed, search?: mixed}  $filters
      */
     public function scopeFilter(Builder $query, array $filters): void
     {
@@ -207,6 +207,7 @@ class JournalEntry extends Model
             ->when(EntryType::tryFrom($value('type')), fn (Builder $q, EntryType $type) => $q->where('type', $type))
             ->when($id('account'), fn (Builder $q, int $accountId) => $q->whereHas('lines', fn (Builder $lines) => $lines->where('account_id', $accountId)))
             ->when($id('party'), fn (Builder $q, int $partyId) => $q->where('party_id', $partyId))
+            ->when($id('payer'), fn (Builder $q, int $payerId) => $q->where('paid_by', $payerId))
             ->when(DueStatus::tryFrom($value('status')), fn (Builder $q, DueStatus $status) => $q->dueStatus($status))
             ->when($search !== '', fn (Builder $q) => $q->where(fn (Builder $w) => $w->where('number', 'like', '%'.$search.'%')
                 ->orWhere('description', 'like', '%'.$search.'%')->orWhere('reference', 'like', '%'.$search.'%')));

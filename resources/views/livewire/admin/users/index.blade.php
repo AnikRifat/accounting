@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Employees')" :description="__('Everyone who works here signs in. Roles set what they can do; companies set whose books they see.')">
-        @can('users.create')<x-slot:actions><x-button icon="plus" :href="route('admin.users.create')">{{ __('Add employee') }}</x-button></x-slot:actions> @endcan
+        @can('users.create')<x-slot:actions><x-button icon="plus" wire:click="openSheet('create')">{{ __('Add employee') }}</x-button></x-slot:actions> @endcan
     </x-page-header>
     @php($showSalary = auth()->user()->hasPermission('users.update'))
     <x-card flush>
@@ -21,7 +21,7 @@
                     <td>{{ $user->hasPermission('companies.all') ? __('All companies') : ($user->companies->pluck('name')->join(', ') ?: '—') }}</td>
                     @if($showSalary)<td class="num"><x-money :value="$user->monthly_salary" /></td>@endif
                     <td><x-badge.active :active="$user->is_active" /></td>
-                    <td><div class="row-actions">@can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $user)" :label="__('Edit :name', ['name' => $user->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
+                    <td><div class="row-actions">@can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $user)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $user->id }}')" :label="__('Edit :name', ['name' => $user->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
                 </tr>
             @empty
                 <x-table.empty :colspan="$showSalary ? 7 : 6" emoji="👥">{{ __('No employees found.') }}</x-table.empty>
@@ -29,4 +29,11 @@
         </x-table>
         {{ $users->links() }}
     </x-card>
+    <x-sheet :label="__('Employee')" size="lg">
+        @if($this->sheetAction() === 'create')
+            <livewire:admin.users.form :key="'sheet-'.$sheet" />
+        @elseif($this->sheetAction() === 'edit')
+            <livewire:admin.users.form :user="\App\Models\User::query()->findOrFail((int) $this->sheetArgument())" :key="'sheet-'.$sheet" />
+        @endif
+    </x-sheet>
 </div>

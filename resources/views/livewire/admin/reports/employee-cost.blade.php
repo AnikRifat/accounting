@@ -24,7 +24,7 @@
                         <td class="num"><x-money :value="$row['total']" /></td>
                         <td class="num"><x-money :value="$row['paid']" /></td>
                         <td class="num"><x-money :value="$row['outstanding']" /></td>
-                        <td class="no-print"><div class="row-actions">@can('entries.view')<x-button variant="ghost" size="sm" icon="eye" :href="route('admin.entries.index', ['party' => $row['party']->id, 'type' => 'expense', 'from' => $range[0], 'to' => $range[1]])" :label="__('Transactions of :name', ['name' => $row['party']->name])">{{ __('View') }}</x-button>@endcan</div></td>
+                        <td class="no-print"><div class="row-actions">@can('entries.view')<x-button variant="ghost" size="sm" icon="eye" :href="route('admin.entries.index', ['party' => $row['party']->id, 'type' => 'expense'] + $transactionsRange)" :label="__('Transactions of :name', ['name' => $row['party']->name])">{{ __('View') }}</x-button>@endcan</div></td>
                     </tr>
                 @endforeach
                 <x-slot:foot><tr class="grand-total-row"><th scope="row" colspan="{{ $consolidated ? 2 : 1 }}">{{ __('Total') }}</th><td class="num">{{ $rows->sum('count') }}</td>

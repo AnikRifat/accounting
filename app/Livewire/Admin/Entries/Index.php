@@ -4,10 +4,12 @@ namespace App\Livewire\Admin\Entries;
 
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
+use App\Livewire\Concerns\WithFormSheet;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\Party;
+use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
@@ -19,9 +21,9 @@ use Livewire\WithPagination;
 
 class Index extends Component
 {
-    use WithPagination;
+    use WithFormSheet, WithPagination;
 
-    private const FILTERS = ['from', 'to', 'type', 'account', 'party', 'status', 'search'];
+    private const FILTERS = ['from', 'to', 'type', 'account', 'party', 'payer', 'status', 'search'];
 
     #[Url(except: '')]
     public string $from = '';
@@ -37,6 +39,10 @@ class Index extends Component
 
     #[Url(except: '')]
     public string $party = '';
+
+    /** User who paid or received the money (journal_entries.paid_by). */
+    #[Url(except: '')]
+    public string $payer = '';
 
     #[Url(except: '')]
     public string $status = '';
@@ -59,7 +65,7 @@ class Index extends Component
     public function filters(): array
     {
         return array_filter(['from' => $this->from, 'to' => $this->to, 'type' => $this->type,
-            'account' => $this->account, 'party' => $this->party, 'status' => $this->status, 'search' => mb_substr($this->search, 0, 100)], fn (string $value): bool => $value !== '');
+            'account' => $this->account, 'party' => $this->party, 'payer' => $this->payer, 'status' => $this->status, 'search' => mb_substr($this->search, 0, 100)], fn (string $value): bool => $value !== '');
     }
 
     public function clearFilters(): void
@@ -111,7 +117,7 @@ class Index extends Component
             ->toBase()->groupBy('type')->selectRaw('type, SUM(amount) as total')->pluck('total', 'type');
 
         return view('livewire.admin.entries.index', [
-            'entries' => $query->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number'])
+            'entries' => $query->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'payer:id,name'])
                 ->orderByDesc('entry_date')->orderByDesc('id')->paginate(25),
             'income' => (int) ($totals[EntryType::Income->value] ?? 0),
             'expense' => (int) ($totals[EntryType::Expense->value] ?? 0),
@@ -120,8 +126,22 @@ class Index extends Component
                 ->get(['id', 'code', 'name', 'company_id'])->mapWithKeys(fn (Account $account): array => [$account->id => $account->label().$suffix($account->company_id)])->all(),
             'parties' => ['' => __('All parties')] + Party::query()->whereIn('company_id', $companyIds)->orderBy('name')
                 ->get(['id', 'name', 'company_id'])->mapWithKeys(fn (Party $party): array => [$party->id => $party->name.$suffix($party->company_id)])->all(),
+            // Only people who actually handled money in the visible scope, so the list never exposes other users.
+            'payers' => ['' => __('Anyone')] + User::query()->whereIn('id', JournalEntry::visibleTo($user)->whereIn('company_id', $companyIds)
+                ->whereNotNull('paid_by')->select('paid_by'))->orderBy('name')->pluck('name', 'id')->all(),
             'statuses' => ['' => __('Any status')] + collect(DueStatus::cases())->mapWithKeys(fn (DueStatus $status): array => [$status->value => $status->label()])->all(),
             'showCompany' => $context->isAll(),
         ])->layout('layouts.admin');
+    }
+
+    protected function sheetRoute(): string
+    {
+        return 'admin.entries.index';
+    }
+
+    /** @return list<string> */
+    protected function sheetsNeedingCompany(): array
+    {
+        return ['create'];
     }
 }

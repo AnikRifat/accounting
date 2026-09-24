@@ -31,16 +31,14 @@
             </x-toolbar>
         </x-slot:toolbar>
         <x-table :caption="__('Transactions')">
-            <x-slot:head><th>{{ __('Number') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Date') }}</th><th>{{ __('Type') }}</th><th>{{ __('Party') }}</th><th>{{ __('Details') }}</th><th class="num">{{ __('Total') }}</th><th class="num">{{ __('Paid') }}</th><th class="num">{{ __('Due') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            <x-slot:head><th>{{ __('Entry') }}</th><th>{{ __('Type') }}</th><th>{{ $showCompany ? __('Party · company') : __('Party') }}</th><th>{{ __('Details') }}</th><th class="num">{{ __('Total') }}</th><th class="num">{{ __('Paid') }}</th><th class="num">{{ __('Due') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
             @forelse($entries as $entry)
                 @php($status = $entry->dueStatus())
                 <tr wire:key="entry-{{ $entry->id }}" @class(['is-voided' => $entry->isVoided()])>
-                    <td class="nowrap"><strong>{{ $entry->number }}</strong></td>
-                    @if($showCompany)<td>{{ $entry->company->name }}</td>@endif
-                    <td class="nowrap">{{ $entry->entry_date->format('d M Y') }}</td>
+                    <td class="nowrap"><strong>{{ $entry->number }}</strong><p class="muted">{{ $entry->entry_date->format('d M Y') }}</p></td>
                     <td><x-badge.entry-type :type="$entry->type" /></td>
-                    <td>{{ $entry->party?->name ?? '—' }}</td>
-                    <td>@if($entry->type->isBill()){{ $entry->categoryAccount()?->name }}@elseif($entry->type->isSettlement()){{ __('For :number', ['number' => $entry->bill?->number]) }} · {{ $entry->paymentAccount()?->name }}@else{{ $entry->creditAccount()?->name }} → {{ $entry->debitAccount()?->name }}@endif
+                    <td>{{ $entry->party?->name ?? '—' }}@if($showCompany)<p class="muted">{{ $entry->company->name }}</p>@endif</td>
+                    <td class="min-w-56">@if($entry->type->isBill()){{ $entry->categoryAccount()?->name }}@elseif($entry->type->isSettlement()){{ __('For :number', ['number' => $entry->bill?->number]) }} · {{ $entry->paymentAccount()?->name }}@else{{ $entry->creditAccount()?->name }} → {{ $entry->debitAccount()?->name }}@endif
                         @if($entry->description)<p class="muted">{{ $entry->description }}</p>@endif @if($entry->isVoided())<p class="muted">{{ __('Void reason: :reason', ['reason' => $entry->void_reason]) }}</p>@endif</td>
                     <td class="num">@if($entry->isVoided())<s><x-money :value="$entry->amount" /></s>@else<x-money :value="$entry->amount" />@endif</td>
                     <td class="num">@if($status)<x-money :value="$entry->paidAmount()" />@else—@endif</td>
@@ -53,7 +51,7 @@
                     @endunless</div></td>
                 </tr>
             @empty
-                <x-table.empty :colspan="$showCompany ? 11 : 10" emoji="🧾">{{ __('No entries found.') }}</x-table.empty>
+                <x-table.empty colspan="9" emoji="🧾">{{ __('No entries found.') }}</x-table.empty>
             @endforelse
         </x-table>
         {{ $entries->links() }}

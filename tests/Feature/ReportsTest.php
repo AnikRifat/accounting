@@ -94,8 +94,9 @@ class ReportsTest extends TestCase
     public function test_period_presets_follow_the_bangladesh_fiscal_year(): void
     {
         $this->actingAs($this->owner);
-        $component = Livewire::test(IncomeStatement::class)->assertSet('from', '2026-09-01')->assertSet('to', '2026-09-30');
+        $component = Livewire::test(IncomeStatement::class)->assertSet('period', 'all_time')->assertSet('from', '')->assertSet('to', '')->assertSee('All time');
         foreach ([
+            'this_month' => ['2026-09-01', '2026-09-30'],
             'last_month' => ['2026-08-01', '2026-08-31'],
             'this_fiscal_year' => ['2026-07-01', '2027-06-30'],
             'last_fiscal_year' => ['2025-07-01', '2026-06-30'],
@@ -133,7 +134,7 @@ class ReportsTest extends TestCase
         $this->transfer($company, '1010', '1000', 3_000_00, '2026-09-20');
         $this->actingAs($this->user('accountant', $company));
 
-        Livewire::test(AccountLedger::class)->assertViewHas('selectedCompany', fn (Company $selected): bool => $selected->is($company))->set('account', (string) $cash->id)
+        Livewire::test(AccountLedger::class)->assertViewHas('scopeLabel', $company->name)->set('period', 'this_month')->set('account', (string) $cash->id)
             ->assertViewHas('report', fn (array $report): bool => $report['opening'] === 15_000_00
                 && array_column($report['rows'], 'balance') === [14_000_00, 16_000_00, 13_000_00]
                 && [$report['debit'], $report['credit'], $report['closing']] === [2_000_00, 4_000_00, 13_000_00]
@@ -154,7 +155,7 @@ class ReportsTest extends TestCase
         $foreignCash = $this->accountId($other, '1000');
         session([CompanyContext::SESSION_KEY => $other->id]);
 
-        Livewire::test(AccountLedger::class)->assertViewHas('selectedCompany', fn (Company $company): bool => $company->is($mine))
+        Livewire::test(AccountLedger::class)->assertViewHas('scopeLabel', $mine->name)
             ->assertViewHas('accountOptions', fn (array $options): bool => array_keys(array_slice($options, 1, null, true)) === $mine->accounts()->orderBy('code')->pluck('id')->all())
             ->set('account', (string) $foreignCash)->assertSet('account', '')->assertViewHas('report', null)
             ->assertDontSee('Secret income');
@@ -162,21 +163,25 @@ class ReportsTest extends TestCase
             ->assertSet('account', '')->assertViewHas('report', null)->assertDontSee('Secret income');
     }
 
-    public function test_account_ledger_asks_for_one_company_in_all_mode(): void
+    public function test_account_ledger_lists_every_account_by_default_across_companies(): void
     {
-        [$first, $second] = Company::factory()->count(2)->create();
-        $this->bill($first, EntryType::Income, '4000', 5_000_00, '2026-09-10');
+        [$first, $second, $hidden] = Company::factory()->count(3)->create();
+        $this->bill($first, EntryType::Income, '4000', 5_000_00, '2026-08-10');
+        $this->bill($second, EntryType::Expense, '5300', 2_000_00, '2026-09-10');
+        $this->bill($hidden, EntryType::Income, '4000', 77_000_00, '2026-09-10');
         $this->actingAs($this->user('accountant', $first, $second));
         $cash = $this->accountId($first, '1000');
 
-        Livewire::withQueryParams(['account' => $cash])->test(AccountLedger::class)
-            ->assertViewHas('selectedCompany', null)->assertViewHas('report', null)->assertSet('account', '')
-            ->assertSee('Choose a company')
-            ->assertSee(route('admin.choose-company', ['next' => route('admin.reports.account-ledger', ['period' => 'this_month'], false)]));
-
-        session([CompanyContext::SESSION_KEY => $first->id]);
-        Livewire::test(AccountLedger::class)->set('account', (string) $cash)->assertViewHas('report', fn (array $report): bool => $report['closing'] === 5_000_00)
-            ->assertDontSee(route('admin.choose-company'));
+        Livewire::test(AccountLedger::class)->assertSet('account', '')->assertViewHas('report', null)->assertViewHas('consolidated', true)
+            ->assertViewHas('accountOptions', fn (array $options): bool => $options[''] === 'All accounts' && ! array_key_exists($this->accountId($hidden, '1000'), $options))
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->map(fn (array $row): array => [$row['account']->id, $row['closing']])->all() === [
+                [$cash, 5_000_00], [$this->accountId($second, '1000'), -2_000_00], [$this->accountId($first, '4000'), 5_000_00], [$this->accountId($second, '5300'), 2_000_00],
+            ] && $summary['debit'] === $summary['credit'])
+            ->assertDontSee('৳77,000.00')->assertDontSee(route('admin.choose-company'))
+            ->set('period', 'this_month')
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->firstWhere('account.id', $cash)['opening'] === 5_000_00
+                && $summary['rows']->firstWhere('account.id', $cash)['debit'] === 0)
+            ->set('account', (string) $cash)->assertViewHas('summary', null)->assertViewHas('report', fn (array $report): bool => $report['closing'] === 5_000_00);
     }
 
     public function test_trial_balance_balances_and_matches_ledger_balances(): void
@@ -276,7 +281,9 @@ class ReportsTest extends TestCase
         $this->actingAs($this->user('accountant', $alpha, $beta));
 
         $link = route('admin.entries.index', ['party' => $rahim->id, 'type' => 'expense', 'from' => '2026-09-01', 'to' => '2026-09-30']);
-        Livewire::test(EmployeeCost::class)
+        Livewire::test(EmployeeCost::class)->assertViewHas('rows', fn ($rows): bool => $rows->firstWhere('party.id', $karim->id)['total'] === 90_000_00)
+            ->assertSee(route('admin.entries.index', ['party' => $rahim->id, 'type' => 'expense']))
+            ->set('period', 'this_month')
             ->assertViewHas('rows', fn ($rows): bool => $rows->map(fn (array $row): array => [$row['party']->id, $row['total'], $row['paid'], $row['outstanding'], $row['count']])->all()
                 === [[$rahim->id, 50_000_00, 40_000_00, 10_000_00, 2], [$karim->id, 30_000_00, 30_000_00, 0, 1], [$salma->id, 10_000_00, 10_000_00, 0, 1]])
             ->assertSee($link)->assertSee('৳90,000.00')->assertSee('<th scope="col">Company</th>', false)->assertDontSee('Secret Person')->assertDontSee('Office Vendor');

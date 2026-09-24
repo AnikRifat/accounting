@@ -55,7 +55,7 @@ session timezone `+06:00`.
 
 ## Commands
 
-- Setup: `composer install && cp .env.example .env && php artisan key:generate && php artisan migrate && npm ci && npm run build`
+- Setup: `composer install && composer setup` (creates `.env`, the app key and the SQLite file, migrates, builds assets)
 - Owner account: `php artisan app:create-admin` (interactive; no default password exists)
 - Demo data (local only, refuses in production): `composer demo`
 - Checks: `composer check` (Pint + tests), `php artisan test --compact`, `npm run build`

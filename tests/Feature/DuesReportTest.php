@@ -157,7 +157,7 @@ class DuesReportTest extends TestCase
     {
         $this->actingAs($this->user('accountant', $this->alpha));
 
-        Livewire::test(PartyStatement::class)->set('party', (string) $this->rahman->id)
+        Livewire::test(PartyStatement::class)->set('period', 'this_month')->set('party', (string) $this->rahman->id)
             ->assertViewHas('report', fn (array $report): bool => $report['opening'] === 100_000_00
                 && array_map(fn (array $row): array => [$row['debit'], $row['credit'], $row['balance']], $report['rows']) === [
                     [0, 30_000_00, 70_000_00], [50_000_00, 20_000_00, 100_000_00], [10_000_00, 10_000_00, 100_000_00],
@@ -176,24 +176,30 @@ class DuesReportTest extends TestCase
         $this->actingAs($this->user('accountant', $this->alpha));
         session([CompanyContext::SESSION_KEY => $this->hidden->id]);
 
-        Livewire::test(PartyStatement::class)->assertViewHas('selectedCompany', fn (Company $company): bool => $company->is($this->alpha))
+        Livewire::test(PartyStatement::class)->assertViewHas('scopeLabel', 'Alpha Ltd')
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->pluck('party.id')->all() === [$this->noor->id, $this->rahman->id])
             ->set('party', (string) $this->secret->id)->assertSet('party', '')->assertViewHas('report', null)->assertDontSee('Secret Buyer');
         Livewire::withQueryParams(['company' => $this->hidden->id, 'party' => $this->secret->id, 'period' => 'this_fiscal_year'])->test(PartyStatement::class)
             ->assertSet('party', '')->assertViewHas('report', null)->assertDontSee('৳77,000.00');
         Livewire::withQueryParams(['party' => $this->betaBuyer->id])->test(PartyStatement::class)->assertSet('party', '')->assertDontSee('Beta Buyer');
     }
 
-    public function test_party_statement_asks_for_one_company_in_all_mode(): void
+    public function test_party_statement_lists_every_party_by_default_and_filters_to_one(): void
     {
+        $this->bill($this->hidden, EntryType::Income, '4000', 77_000_00, '2026-09-12', ['paid' => 0, 'party' => $this->secret, 'due' => '2026-10-12']);
         $this->actingAs($this->user('accountant', $this->alpha, $this->beta));
 
-        Livewire::withQueryParams(['party' => $this->rahman->id])->test(PartyStatement::class)
-            ->assertViewHas('selectedCompany', null)->assertViewHas('report', null)->assertSet('party', '')
-            ->assertViewHas('partyOptions', ['' => 'Choose a party'])->assertSee('Choose a company')
-            ->assertSee(route('admin.choose-company', ['next' => route('admin.reports.party-statement', ['period' => 'this_fiscal_year'], false)]));
-
-        session([CompanyContext::SESSION_KEY => $this->beta->id]);
-        Livewire::test(PartyStatement::class)->assertViewHas('partyOptions', fn (array $options): bool => array_keys($options) === ['', $this->betaBuyer->id]);
+        Livewire::test(PartyStatement::class)->assertSet('period', 'all_time')->assertSet('party', '')->assertViewHas('report', null)
+            ->assertViewHas('partyOptions', fn (array $options): bool => $options[''] === 'All parties'
+                && array_keys($options) === ['', $this->betaBuyer->id, $this->noor->id, $this->rahman->id])
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->map(fn (array $row): array => [$row['party']->id, $row['closing']])->all() === [
+                [$this->betaBuyer->id, 20_000_00], [$this->noor->id, -44_000_00], [$this->rahman->id, 100_000_00],
+            ] && $summary['closing'] === 76_000_00)
+            ->assertSee('All time')->assertDontSee('Opening due')->assertDontSee('Secret Buyer')
+            ->set('party', (string) $this->betaBuyer->id)
+            ->assertViewHas('summary', null)->assertViewHas('report', fn (array $report): bool => $report['closing'] === 20_000_00)
+            ->set('party', '')->set('from', '2026-09-05')->assertSet('period', 'custom')->assertHasNoErrors()->assertSee('From 05 Sep 2026')
+            ->assertViewHas('summary', fn (array $summary): bool => $summary['rows']->firstWhere('party.id', $this->rahman->id)['opening'] === 70_000_00);
     }
 
     /**

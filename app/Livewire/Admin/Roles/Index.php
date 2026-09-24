@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Roles;
 
+use App\Livewire\Concerns\WithFormSheet;
 use App\Models\RolePermission;
 use App\Support\Permissions;
 use Illuminate\Contracts\View\View;
@@ -10,6 +11,8 @@ use Livewire\Component;
 
 class Index extends Component
 {
+    use WithFormSheet;
+
     public function delete(string $role): void
     {
         Gate::authorize('roles.delete');
@@ -31,5 +34,10 @@ class Index extends Component
         $registry = app(Permissions::class);
 
         return view('livewire.admin.roles.index', ['registry' => $registry, 'roles' => $registry->assignableRoles()])->layout('layouts.admin');
+    }
+
+    protected function sheetRoute(): string
+    {
+        return 'admin.roles.index';
     }
 }
