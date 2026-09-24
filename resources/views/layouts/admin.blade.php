@@ -74,6 +74,7 @@
                     </button>
                     <div class="menu-panel" role="menu" x-show="open" x-cloak x-transition:enter="menu-enter" x-transition:enter-start="menu-hidden" x-transition:leave="menu-enter" x-transition:leave-end="menu-hidden">
                         <div class="menu-header"><p class="font-semibold text-heading">{{ $user->name }}</p><p class="muted">{{ $user->email }}</p><p class="mt-2"><x-badge tone="primary">{{ app(\App\Support\Permissions::class)->label($user->role) }}</x-badge></p></div>
+                        <a class="menu-item" role="menuitem" href="{{ route('admin.profile') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">👤</span>{{ __('Profile') }}</a>
                         @can('settings.view')<a class="menu-item" role="menuitem" href="{{ route('admin.settings') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">⚙️</span>{{ __('Settings') }}</a>@endcan
                         <form method="post" action="{{ route('logout') }}">@csrf <button class="menu-item menu-item-danger" role="menuitem" type="submit"><x-icon name="log-out" />{{ __('Sign out') }}</button></form>
                     </div>

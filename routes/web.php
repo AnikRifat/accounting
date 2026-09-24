@@ -20,6 +20,7 @@ use App\Livewire\Admin\Parties\Form as PartyForm;
 use App\Livewire\Admin\Parties\Index as PartyIndex;
 use App\Livewire\Admin\PaymentMethods\Form as PaymentMethodForm;
 use App\Livewire\Admin\PaymentMethods\Index as PaymentMethodIndex;
+use App\Livewire\Admin\Profile;
 use App\Livewire\Admin\Reports\AccountLedger;
 use App\Livewire\Admin\Reports\Dues;
 use App\Livewire\Admin\Reports\EmployeeCost;
@@ -51,6 +52,7 @@ Route::post('/admin/logout', function (Request $request) {
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access'])->group(function (): void {
     Route::livewire('/', Dashboard::class)->middleware('can:dashboard.view')->name('dashboard');
     Route::livewire('/choose-company', ChooseCompany::class)->name('choose-company');
+    Route::livewire('/profile', Profile::class)->name('profile');
     Route::get('/print/{token}', PrintTableController::class)->where('token', '[A-Za-z0-9]{40}')->name('print');
     Route::livewire('/users', UserIndex::class)->middleware('can:users.view')->name('users.index');
     Route::livewire('/users/create', UserForm::class)->middleware('can:users.create')->name('users.create');
