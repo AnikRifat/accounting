@@ -40,8 +40,10 @@ setup and handover. Deployment itself is excluded.
 - User management without `companies.all` is limited to accounts whose companies the manager can
   all see and whose role ceiling is within the manager's own permissions (no takeover of a more
   powerful account). See `App\Livewire\Admin\Users\ManageableUsers`.
-- Entries are never deleted. They can be edited (`entries.update`) or voided with a reason
-  (`entries.void`). Voided entries stay visible and are excluded from balances and reports.
+- Entries can be edited (`entries.update`), voided with a reason (`entries.void`; stays visible,
+  excluded from figures) or moved to Trash (`entries.delete`; hidden, restorable). Permanent delete
+  needs `entries.purge`. See the increment 10 contract (superseded the original "never deleted" rule
+  at Anik's request).
 - Within-company transfers (e.g. withdrawing from the bank to cash) are included, because cash and
   bank balances would be wrong without them. Opening balances for cash and bank accounts are
   posted against a system account called *Opening Balance Equity*.
@@ -127,10 +129,10 @@ with `migrate:fresh`. Final order: `000001` companies, `000002` employees, `0000
   against an expense due).
 - Lines: 2 or 3 per entry, balanced, and each line one-sided.
 
-| Type | Lines (T = total, P = paid now, 0 ≤ P ≤ T, D = T − P) |
+| Type | Lines (T = total, P = paid now, the sum of up to 10 payment-method shares, 0 ≤ P ≤ T, D = T − P) |
 | --- | --- |
-| Income | Cr category T; Dr payment method P (if P > 0); Dr Accounts Receivable D (if D > 0) |
-| Expense | Dr category T; Cr payment method P (if P > 0); Cr Accounts Payable D (if D > 0) |
+| Income | Cr category T; Dr each payment method its share of P; Dr Accounts Receivable D (if D > 0) |
+| Expense | Dr category T; Cr each payment method its share of P; Cr Accounts Payable D (if D > 0) |
 | Receipt (bill = income entry) | Dr payment method X; Cr Accounts Receivable X |
 | Payment (bill = expense entry) | Dr Accounts Payable X; Cr payment method X |
 | Transfer, Opening | unchanged |
@@ -138,8 +140,8 @@ with `migrate:fresh`. Final order: `000001` companies, `000002` employees, `0000
 Rules:
 - **When a due exists (D > 0):** party and due date are required; the due date must be on or
   after the entry date.
-- **Payment method:** required when P > 0, and must be an active payment method of the same
-  company. Category and party must also belong to the same company.
+- **Payment methods:** each share of P needs one, used once per entry, with an amount > 0; each
+  must be an active payment method of the same company. Category and party must also belong to the same company.
 - **Party** is optional on fully paid entries.
 - **Settling a due:** X must be > 0 and ≤ the outstanding amount. The date must be on or after the
   bill's date. The settlement takes the party from the bill.
@@ -156,8 +158,9 @@ Rules:
 
 **UI:**
 - **Entry form fields:** company, date, category, party (searchable, with quick "add party" when
-  the user has parties.create), total amount, paid now (defaults to the total), payment method
-  (defaults to Cash), due date (shown only when paid < total), reference, description.
+  the user has parties.create), total amount, paid now as payment-method rows (one Cash row
+  that follows the total until edited; "add another payment method" prefills what is still unpaid),
+  due date (shown only when paid < total), reference, description.
 - **Settling dues:** a bill with an outstanding balance offers "Receive payment" or "Make
   payment", which records a settlement.
 - **Transactions list:**
@@ -262,7 +265,7 @@ Permissions (already in `config/permissions.php`):
 - Tests cover all of this, including isolation (a crafted id or kind of another company returns 404)
   and roles.
 
-**C. Row buttons (session frish-79, which owns the list views):**
+**C. Row buttons (frish-79 cleared the coordinator to add them to its list views after A and B land, using its pattern: `<x-button variant="ghost" size="sm" icon="trash" class="text-danger" …>` inside `<div class="row-actions">`, and the Trash button `<x-button variant="secondary" icon="trash" :href="route('admin.entries.trash')">` in the Transactions page-header actions):**
 - Add a Delete button per row: it dispatches `open-delete` for masters, and calls
   `$wire.delete(id)` on the Transactions list.
 - Add a "Trash" link on the Transactions page.
@@ -357,6 +360,7 @@ Rules for every module:
 | 7-review | Read-only review of increments 5 and 7 (excluding increment 8 areas) | agent `review-5-7` + coordinator fixes | done: 8 findings. Fixed: (1, security) opening-balance edits need accounts.manage; (2) locking reads for bill/first-settlement dates; (3) deadlock retries (3 attempts) on ledger writes; (4) All-mode name merge case/space-insensitive in trial balance and income statement; (5) header switch keeps the page query string (same-site admin Referer only); (6) chooser lists inactive companies for report targets. Open: (7) duplicate-name races in category/payment-method/quick-add forms return 500 (low); (8) select/drawer a11y gaps relayed to frish-79. Suite 181/181. |
 | 8 | Employees become users (staff fields on `users`, one party per assigned company via `User::syncParties()`, single super admin via `Gate::before`, editable system roles) | session frish-5f | done (commit 20607fc); 177/178 green; the 1 failure is DemoSeederTest asserting the owner password is not 'password', which conflicts with Anik's local edit setting the demo password to 'password' |
 | 9 | Transactions list: "Paid / received by" (Anik) | coordinator (backend) + frish-79 (view, filter drawer) | backend done: `payer` #[Url] filter, `$payers` options (only users who handled money in scope), `payer` eager-load, CSV column and `?payer=`; receipts/payments now record `paid_by` (same payerId() rule); PayerFilterTest; 182/182. Filters move to an off-canvas drawer in frish-79's phase-2 table pattern. |
+| 10 | Deleting (Anik): transaction Trash (soft delete, restore, purge) + delete dialog for categories, payment methods, chart accounts, parties, companies with transfer-or-hard-delete | agents `ledger` (10A), `org` (10B), coordinator (buttons, purge file cleanup after commit) | done: 211/211, Pint clean, build OK. Every figure proven to ignore trashed entries; nextNumber reads trashed rows (no number reuse on trash); purge deletes attachments only after the outermost commit. Known limits: a purged newest entry's number can be reissued; Empty trash purges entry by entry. Local DBs need `php artisan migrate` (new migration 2026_09_24_190000). |
 | 6 | Final review, behavior verification, handover | coordinator + agent `verify-final` | done: PASS on snapshot of 4d6396f + fixes. README fresh setup OK (after D1 fix: `composer setup` now creates the SQLite file); `composer check` 181/181; 10-step customer journey (2,755 assertions) incl. drawer companies, partial payment → overdue → settle → paid, void rules, reports vs hand-computed figures, isolation (13 pages, CSV, crafted ids/session/Livewire), roles; ledger invariants after journey and demo seed; HTTP smoke 110 requests in All and single-company mode, no errors. Not covered: browser/JS behaviour, concurrency on MySQL, file uploads, cPanel deploy. Later work by parallel sessions (UI phase 2) is outside this verification. |
 
 ## Acceptance criteria

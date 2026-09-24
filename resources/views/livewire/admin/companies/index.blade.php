@@ -20,7 +20,7 @@
                     <td><x-badge>{{ $company->code }}</x-badge></td>
                     <td class="nowrap">{{ $company->phone ?: '—' }}</td>
                     <td><x-badge.active :active="$company->is_active" /></td>
-                    <td><div class="row-actions">@can('companies.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.companies.edit', $company)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $company->id }}')" :label="__('Edit :name', ['name' => $company->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
+                    <td><div class="row-actions">@can('companies.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.companies.edit', $company)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $company->id }}')" :label="__('Edit :name', ['name' => $company->name])">{{ __('Edit') }}</x-button>@endcan @can('companies.delete')<x-button variant="ghost" size="sm" icon="trash" class="text-danger" x-on:click="$dispatch('open-delete', { kind: 'company', id: {{ $company->id }} })" :label="__('Delete :name', ['name' => $company->name])" />@endcan</div></td>
                 </tr>
             @empty
                 <x-table.empty colspan="6" emoji="🏢">{{ __('No companies found.') }}</x-table.empty>

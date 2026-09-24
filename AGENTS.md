@@ -20,7 +20,8 @@ session timezone `+06:00`.
 - **Money** is integer paisa in `BIGINT` columns. Use `App\Support\Money` for input, edit values
   and display (৳, lakh/crore grouping). Never use floats. The maximum is 11 taka digits.
 - **Ledger writes** go only through `App\Services\LedgerService` (record, recordOpening, update,
-  settle, void). Every entry has 2–3 one-sided lines that balance exactly. Entries are
+  settle, void). Every entry has one-sided lines that balance exactly (2 or more; an income or expense can be paid
+  through up to `LedgerService::MAX_PAYMENTS` methods, one line each). Entries are
   never deleted, only voided with a reason. Voided entries are excluded via `JournalEntry::posted()`
   everywhere figures are computed. Numbers are `<COMPANY CODE>-000001` per company, generated under
   a company row lock.

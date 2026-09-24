@@ -130,8 +130,8 @@ class AccountsTest extends TestCase
         $company = Company::factory()->create();
         $user = $this->accountant($company);
         $rent = $company->accounts()->where('code', '5100')->sole();
-        app(LedgerService::class)->record($company, EntryType::Expense, ['entry_date' => '2026-09-01', 'amount' => 100, 'paid_amount' => 100,
-            'category_account_id' => $rent->id, 'payment_account_id' => $company->accounts()->where('code', '1000')->sole()->id], $user);
+        app(LedgerService::class)->record($company, EntryType::Expense, ['entry_date' => '2026-09-01', 'amount' => 100,
+            'category_account_id' => $rent->id, 'payments' => [['account_id' => $company->accounts()->where('code', '1000')->sole()->id, 'amount' => 100]]], $user);
         $this->actingAs($user);
 
         Livewire::test(Form::class, ['account' => $rent])->set('type', 'income')->call('save')->assertHasErrors('type');

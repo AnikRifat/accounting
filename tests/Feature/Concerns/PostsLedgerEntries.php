@@ -40,8 +40,8 @@ trait PostsLedgerEntries
         $paid = $extra['paid'] ?? $amount;
 
         return app(LedgerService::class)->record($company, $type, [
-            'entry_date' => $date, 'amount' => $amount, 'paid_amount' => $paid, 'category_account_id' => $this->accountId($company, $category),
-            'payment_account_id' => $paid > 0 ? $this->accountId($company, $extra['method'] ?? '1000') : null,
+            'entry_date' => $date, 'amount' => $amount, 'category_account_id' => $this->accountId($company, $category),
+            'payments' => $paid > 0 ? [['account_id' => $this->accountId($company, $extra['method'] ?? '1000'), 'amount' => $paid]] : [],
             'party_id' => ($extra['party'] ?? null)?->id, 'due_date' => $extra['due'] ?? null, 'description' => $extra['description'] ?? null,
         ], $this->owner);
     }

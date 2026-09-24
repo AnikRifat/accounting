@@ -107,6 +107,22 @@ class Index extends Component
         session()->now('success', __('Entry :number voided.', ['number' => $entry->number]));
     }
 
+    /** Moves an entry to the Trash; a refusal (e.g. a bill with receipts or payments) lands in the `delete` error. */
+    public function delete(int $entryId): void
+    {
+        Gate::authorize('entries.delete');
+        $this->resetErrorBag('delete');
+        $entry = JournalEntry::visibleTo(auth()->user())->whereIn('company_id', app(CompanyContext::class)->companyIds())->findOrFail($entryId);
+        try {
+            app(LedgerService::class)->delete($entry, auth()->user());
+        } catch (ValidationException $exception) {
+            $this->addError('delete', collect($exception->errors())->flatten()->first());
+
+            return;
+        }
+        session()->now('success', __('Entry :number moved to trash.', ['number' => $entry->number]));
+    }
+
     public function render(): View
     {
         Gate::authorize('entries.view');

@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
+use App\Models\Media;
 use App\Models\Party;
 use App\Models\User;
 use App\Support\Money;
@@ -25,12 +26,12 @@ use InvalidArgumentException;
 use LogicException;
 
 /**
- * The only writer of journal data. Every entry posts 2–3 one-sided, balanced lines (paisa); entries
- * are never deleted, only voided.
+ * The only writer of journal data. Every entry posts 2 or more one-sided, balanced lines (paisa). Entries are
+ * voided or moved to the Trash (soft delete); purge() is the only hard delete.
  *
- * Posting rules (T = total, P = paid now, D = T − P, X = settled):
- * - Income: Cr category T; Dr payment method P (if P > 0); Dr Accounts Receivable D (if D > 0).
- * - Expense: Dr category T; Cr payment method P (if P > 0); Cr Accounts Payable D (if D > 0).
+ * Posting rules (T = total, P = paid now across up to MAX_PAYMENTS methods, D = T − P, X = settled):
+ * - Income: Cr category T; Dr each payment method its share of P; Dr Accounts Receivable D (if D > 0).
+ * - Expense: Dr category T; Cr each payment method its share of P; Cr Accounts Payable D (if D > 0).
  * - Receipt (settles an income bill): Dr payment method X; Cr Accounts Receivable X.
  * - Payment (settles an expense bill): Dr Accounts Payable X; Cr payment method X.
  * - Transfer: Dr receiving payment method; Cr paying payment method.
@@ -61,6 +62,9 @@ class LedgerService
 
     /** Upper bound of one entry: the largest amount App\Support\Money accepts as input. */
     public const MAX_AMOUNT = 9_999_999_999_999;
+
+    /** Most payment methods one income or expense can be paid through. */
+    public const MAX_PAYMENTS = 10;
 
     /** Concurrent writers can deadlock on InnoDB gap locks; Laravel retries the whole transaction this many times. */
     private const DEADLOCK_ATTEMPTS = 3;
@@ -108,9 +112,10 @@ class LedgerService
     /**
      * Records an income, expense, transfer or opening entry. Receipts and payments go through settle().
      *
-     * Income/expense data: entry_date (Y-m-d), amount (total, paisa), paid_amount (0…amount),
-     * category_account_id, payment_account_id (required when paid_amount > 0), party_id and due_date
-     * (both required when paid_amount < amount), paid_by? (user id; see payerId(); always recorded, even when nothing
+     * Income/expense data: entry_date (Y-m-d), amount (total, paisa), payments (list of {account_id, amount}:
+     * the paid-now part, one row per distinct payment method, amounts > 0, summing to at most amount; [] when
+     * nothing is paid now), category_account_id, party_id and due_date (both required when the payments sum
+     * to less than amount), paid_by? (user id; see payerId(); always recorded, even when nothing
      * is paid now), description?, reference?.
      * Transfer/opening data: entry_date, amount, debit_account_id, credit_account_id, description?, reference?.
      *
@@ -233,6 +238,104 @@ class LedgerService
         }, self::DEADLOCK_ATTEMPTS);
     }
 
+    /**
+     * Moves an entry (posted or voided) to the Trash, where it counts in no figure. A bill whose receipts
+     * or payments (posted or voided) are not in the Trash is refused; trashing a settlement reopens its amount.
+     *
+     * @throws ValidationException|AuthorizationException
+     */
+    public function delete(JournalEntry $entry, User $actor): JournalEntry
+    {
+        $this->authorize($actor, 'entries.delete', $entry->company_id);
+
+        return DB::transaction(function () use ($entry, $actor): JournalEntry {
+            $this->lockBillOf($entry);
+            $locked = JournalEntry::withTrashed()->lockForUpdate()->findOrFail($entry->id);
+            if ($locked->trashed()) {
+                throw ValidationException::withMessages(['entry' => __('This entry is already in the Trash.')]);
+            }
+            if ($locked->type->isBill() && JournalEntry::query()->where('bill_id', $locked->id)->lockForUpdate()->exists()) {
+                throw ValidationException::withMessages(['entry' => __('Delete the receipts or payments first.')]);
+            }
+            $locked->forceFill(['deleted_at' => now(), 'deleted_by' => $actor->id])->save();
+
+            return $locked;
+        }, self::DEADLOCK_ATTEMPTS);
+    }
+
+    /**
+     * Restores an entry from the Trash. Refused for an inactive company, for a settlement whose bill is in
+     * the Trash (or voided), and when a restored settlement would pay more than its bill's outstanding amount.
+     *
+     * @throws ValidationException|AuthorizationException
+     */
+    public function restore(JournalEntry $entry, User $actor): JournalEntry
+    {
+        $this->authorize($actor, 'entries.delete', $entry->company_id);
+
+        return DB::transaction(function () use ($entry, $actor): JournalEntry {
+            $this->lockOpenCompany($entry->company_id);
+            $bill = $this->lockBillOf($entry);
+            $locked = JournalEntry::withTrashed()->lockForUpdate()->findOrFail($entry->id);
+            if (! $locked->trashed()) {
+                throw ValidationException::withMessages(['entry' => __('This entry is not in the Trash.')]);
+            }
+            if ($bill?->trashed()) {
+                throw ValidationException::withMessages(['entry' => __('Restore :number first; this receipt or payment belongs to it.', ['number' => $bill->number])]);
+            }
+            if ($bill !== null && ! $locked->isVoided()) {
+                if ($bill->isVoided()) {
+                    throw ValidationException::withMessages(['entry' => __(':number is voided, so this receipt or payment can only be restored once it is voided too.', ['number' => $bill->number])]);
+                }
+                $outstanding = $this->outstanding($bill);
+                if ($locked->amount > $outstanding) {
+                    throw ValidationException::withMessages(['entry' => __('Restoring it would settle more than the :amount outstanding on :number.', [
+                        'amount' => Money::format($outstanding), 'number' => $bill->number,
+                    ])]);
+                }
+            }
+            $locked->forceFill(['deleted_at' => null, 'deleted_by' => null, 'updated_by' => $actor->id])->save();
+
+            return $locked;
+        }, self::DEADLOCK_ATTEMPTS);
+    }
+
+    /**
+     * Permanently deletes an entry (in the Trash or not), its lines and attached files and, for a bill, all
+     * of its receipts or payments in any state. The only hard delete of journal data.
+     *
+     * @throws AuthorizationException
+     */
+    public function purge(JournalEntry $entry, User $actor): void
+    {
+        $this->authorize($actor, 'entries.purge', $entry->company_id);
+
+        $media = DB::transaction(function () use ($entry): EloquentCollection {
+            $this->lockBillOf($entry);
+            $locked = JournalEntry::withTrashed()->lockForUpdate()->findOrFail($entry->id);
+            $settlementIds = $locked->type->isBill()
+                ? JournalEntry::withTrashed()->where('bill_id', $locked->id)->lockForUpdate()->pluck('id')->all()
+                : [];
+            $ids = [...$settlementIds, $locked->id];
+            $media = Media::query()->where('mediable_type', $locked->getMorphClass())->whereIn('mediable_id', $ids)->get();
+            JournalLine::query()->whereIn('journal_entry_id', $ids)->delete();
+            // Settlements first: bill_id restricts deleting a bill that still has them.
+            JournalEntry::withTrashed()->whereKey($settlementIds)->forceDelete();
+            JournalEntry::withTrashed()->whereKey($locked->id)->forceDelete();
+
+            return $media;
+        }, self::DEADLOCK_ATTEMPTS);
+        // Files go only after the rows are gone for good, so a rolled-back purge never loses a file. afterCommit also
+        // waits for an outer transaction (e.g. RecordDeletion's hard delete) and runs at once when there is none.
+        DB::afterCommit(fn () => $media->each(fn (Media $item) => app(MediaService::class)->detach($item)));
+    }
+
+    /** Locks a settlement's bill (even in the Trash) before the settlement itself, the same order as settle(). */
+    private function lockBillOf(JournalEntry $entry): ?JournalEntry
+    {
+        return $entry->bill_id === null ? null : JournalEntry::withTrashed()->lockForUpdate()->find($entry->bill_id);
+    }
+
     /** Outstanding paisa of a bill: its receivable/payable line minus posted settlements (0 for other entries). */
     public function outstanding(JournalEntry $bill): int
     {
@@ -311,6 +414,7 @@ class LedgerService
             ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->whereIn('journal_entries.company_id', $companyIds)
             ->whereNull('journal_entries.voided_at')
+            ->whereNull('journal_entries.deleted_at')
             ->whereBetween('journal_entries.entry_date', [$from, $to])
             ->whereIn('accounts.type', array_map(fn (AccountType $type): string => $type->value, $types))
             ->groupBy('accounts.id', 'accounts.company_id', 'accounts.code', 'accounts.name', 'accounts.type')
@@ -340,8 +444,9 @@ class LedgerService
 
     private function nextNumber(Company $company): string
     {
-        // A locking read sees the latest committed row even when an outer transaction's snapshot is older.
-        $last = JournalEntry::query()->where('company_id', $company->id)->latest('id')->lockForUpdate()->value('number');
+        // A locking read sees the latest committed row even when an outer transaction's snapshot is older;
+        // trashed entries keep their numbers, so they are included.
+        $last = JournalEntry::withTrashed()->where('company_id', $company->id)->latest('id')->lockForUpdate()->value('number');
         $sequence = $last === null ? 1 : (int) Str::afterLast($last, '-') + 1;
 
         return $company->code.'-'.str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
@@ -387,25 +492,26 @@ class LedgerService
     {
         $data = $this->validate($data, [
             'amount' => ['required', 'integer', 'min:1', 'max:'.self::MAX_AMOUNT],
-            'paid_amount' => ['required', 'integer', 'min:0', 'lte:amount'],
+            'payments' => ['present', 'array', 'max:'.self::MAX_PAYMENTS],
+            'payments.*' => ['array:account_id,amount'],
+            'payments.*.account_id' => ['required', 'integer', 'distinct'],
+            'payments.*.amount' => ['required', 'integer', 'min:1', 'max:'.self::MAX_AMOUNT],
             'category_account_id' => ['required', 'integer'],
-            'payment_account_id' => ['nullable', 'integer'],
             'party_id' => ['nullable', 'integer'],
             'due_date' => ['nullable', 'date_format:Y-m-d'],
             'paid_by' => ['nullable', 'integer'],
         ]);
         $income = $entry->type === EntryType::Income;
-        [$total, $paid] = [(int) $data['amount'], (int) $data['paid_amount']];
+        $total = (int) $data['amount'];
+        $paid = array_sum(array_map(fn (array $payment): int => (int) $payment['amount'], $data['payments']));
         $unpaid = $total - $paid;
-        $errors = [];
+        $errors = $paid > $total ? ['payments' => __('The amount paid now can\'t be more than the total.')] : [];
         $category = $this->account($entry, $data['category_account_id'], $keep, 'category_account_id', $errors,
             fn (Account $account): bool => ! $account->is_system && $account->type === ($income ? AccountType::Income : AccountType::Expense),
             $income ? __('Choose an income category.') : __('Choose an expense category.'));
-        $method = null;
-        if ($paid > 0 && ($data['payment_account_id'] ?? null) === null) {
-            $errors['payment_account_id'] = __('Choose a payment method.');
-        } elseif ($paid > 0) {
-            $method = $this->account($entry, $data['payment_account_id'], $keep, 'payment_account_id', $errors,
+        $methods = [];
+        foreach ($data['payments'] as $index => $payment) {
+            $methods[$index] = $this->account($entry, $payment['account_id'], $keep, "payments.{$index}.account_id", $errors,
                 fn (Account $account): bool => $account->isPaymentMethod(), __('Choose a payment method.'));
         }
         $partyId = $this->partyId($entry, $data['party_id'] ?? null, $errors);
@@ -436,8 +542,8 @@ class LedgerService
 
         $side = fn (int $accountId, int $amount, bool $debit): array => ['account_id' => $accountId, 'debit' => $debit ? $amount : 0, 'credit' => $debit ? 0 : $amount];
         $lines = [$side($category->id, $total, ! $income)];
-        if ($paid > 0) {
-            $lines[] = $side($method->id, $paid, $income);
+        foreach ($data['payments'] as $index => $payment) {
+            $lines[] = $side($methods[$index]->id, (int) $payment['amount'], $income);
         }
         if ($unpaid > 0) {
             $lines[] = $side($this->systemAccount($entry->company_id, $income ? AccountType::Asset : AccountType::Liability)->id, $unpaid, $income);
@@ -598,11 +704,12 @@ class LedgerService
             'reference' => ['nullable', 'string', 'max:100'],
         ], [
             'amount.min' => __('The amount must be greater than zero.'),
-            'paid_amount.lte' => __('The amount paid now can\'t be more than the total.'),
+            'payments.*.amount.min' => __('The amount must be greater than zero.'),
+            'payments.*.account_id.distinct' => __('Choose each payment method once.'),
             'credit_account_id.different' => __('Choose two different accounts.'),
         ], [
-            'entry_date' => __('date'), 'amount' => __('amount'), 'paid_amount' => __('paid now'), 'category_account_id' => __('category'),
-            'payment_account_id' => __('payment method'), 'party_id' => __('party'), 'due_date' => __('due date'), 'paid_by' => __('paid by'),
+            'entry_date' => __('date'), 'amount' => __('amount'), 'payments' => __('paid now'), 'category_account_id' => __('category'),
+            'payments.*.account_id' => __('payment method'), 'payments.*.amount' => __('amount'), 'payment_account_id' => __('payment method'), 'party_id' => __('party'), 'due_date' => __('due date'), 'paid_by' => __('paid by'),
             'debit_account_id' => __('account'), 'credit_account_id' => __('account'), 'description' => __('description'), 'reference' => __('reference'),
         ])->validate();
     }
@@ -615,12 +722,12 @@ class LedgerService
         }
     }
 
-    /** Re-reads the written lines: 2–3 lines, each one-sided, debits = credits = the entry's amount. */
+    /** Re-reads the written lines: 2 to MAX_PAYMENTS + 2 lines, each one-sided, debits = credits = the entry's amount. */
     private function assertBalanced(JournalEntry $entry): void
     {
         $lines = $entry->lines()->get(['debit', 'credit']);
         $oneSided = $lines->every(fn (JournalLine $line): bool => ($line->debit > 0) !== ($line->credit > 0));
-        if ($lines->count() < 2 || $lines->count() > 3 || ! $oneSided
+        if ($lines->count() < 2 || $lines->count() > self::MAX_PAYMENTS + 2 || ! $oneSided
             || $lines->sum('debit') !== $lines->sum('credit') || $lines->sum('debit') !== $entry->amount) {
             throw new LogicException("Journal entry {$entry->number} is not balanced.");
         }

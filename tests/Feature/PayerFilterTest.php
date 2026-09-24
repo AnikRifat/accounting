@@ -30,11 +30,11 @@ class PayerFilterTest extends TestCase
         $ledger = app(LedgerService::class);
 
         $ownerBill = $this->bill($mine, EntryType::Expense, '5100', 10_000_00, '2026-09-01', ['paid' => 4_000_00, 'party' => $party, 'due' => '2026-09-30']);
-        $accountantBill = $ledger->record($mine, EntryType::Income, ['entry_date' => '2026-09-02', 'amount' => 5_000_00, 'paid_amount' => 5_000_00,
-            'category_account_id' => $this->accountId($mine, '4000'), 'payment_account_id' => $this->accountId($mine, '1000')], $accountant);
+        $accountantBill = $ledger->record($mine, EntryType::Income, ['entry_date' => '2026-09-02', 'amount' => 5_000_00,
+            'category_account_id' => $this->accountId($mine, '4000'), 'payments' => [['account_id' => $this->accountId($mine, '1000'), 'amount' => 5_000_00]]], $accountant);
         $payment = $ledger->settle($ownerBill, ['entry_date' => '2026-09-03', 'amount' => 1_000_00, 'payment_account_id' => $this->accountId($mine, '1000')], $accountant);
-        $ledger->record($other, EntryType::Income, ['entry_date' => '2026-09-02', 'amount' => 1_00, 'paid_amount' => 1_00,
-            'category_account_id' => $this->accountId($other, '4000'), 'payment_account_id' => $this->accountId($other, '1000')], $outsider);
+        $ledger->record($other, EntryType::Income, ['entry_date' => '2026-09-02', 'amount' => 1_00,
+            'category_account_id' => $this->accountId($other, '4000'), 'payments' => [['account_id' => $this->accountId($other, '1000'), 'amount' => 1_00]]], $outsider);
 
         $this->assertSame([$this->owner->id, $accountant->id, $accountant->id], [$ownerBill->paid_by, $accountantBill->paid_by, $payment->paid_by]);
 

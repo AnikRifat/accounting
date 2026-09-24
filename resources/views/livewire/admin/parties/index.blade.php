@@ -31,7 +31,7 @@
                         @if($party->isEmployee())
                             @can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $party->user_id)" :navigate="false" x-on:click.prevent="Livewire.navigate({{ \Illuminate\Support\Js::from(route('admin.users.index', ['sheet' => 'edit:'.$party->user_id])) }})" :label="__('Edit employee :name', ['name' => $party->name])">{{ __('Edit employee') }}</x-button>@endcan
                         @else
-                            @can('parties.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.parties.edit', $party)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $party->id }}')" :label="__('Edit :name', ['name' => $party->name])">{{ __('Edit') }}</x-button>@endcan
+                            @can('parties.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.parties.edit', $party)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $party->id }}')" :label="__('Edit :name', ['name' => $party->name])">{{ __('Edit') }}</x-button>@endcan @can('parties.delete')<x-button variant="ghost" size="sm" icon="trash" class="text-danger" x-on:click="$dispatch('open-delete', { kind: 'party', id: {{ $party->id }} })" :label="__('Delete :name', ['name' => $party->name])" />@endcan
                         @endif
                     </div></td>
                 </tr>

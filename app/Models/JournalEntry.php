@@ -14,12 +14,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
  * A balanced double entry of 2–3 one-sided lines. Written only through App\Services\LedgerService;
- * never deleted, only voided. Income and expense entries are bills: `amount` is their total and any
+ * voided, or moved to the Trash (soft delete, excluded from every figure) and only then purged. Income and expense entries are bills: `amount` is their total and any
  * unpaid part sits on Accounts Receivable/Payable until receipts or payments (`bill_id`) settle it.
  */
 #[Fillable(['entry_date', 'amount', 'description', 'reference', 'party_id', 'due_date', 'paid_by'])]
@@ -29,7 +31,7 @@ class JournalEntry extends Model
     public const REFERENCE_FILE = 'reference';
 
     /** @use HasFactory<JournalEntryFactory> */
-    use HasFactory, HasMedia;
+    use HasFactory, HasMedia, SoftDeletes;
 
     protected function casts(): array
     {
@@ -96,6 +98,12 @@ class JournalEntry extends Model
         return $this->belongsTo(User::class, 'voided_by');
     }
 
+    /** Who moved the entry to the Trash. */
+    public function deleter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
+    }
+
     public function isVoided(): bool
     {
         return $this->voided_at !== null;
@@ -125,6 +133,16 @@ class JournalEntry extends Model
         return $this->lines->sortByDesc('debit')->first(fn (JournalLine $line): bool => $line->account->isPaymentMethod())?->account;
     }
 
+    /**
+     * Every payment method on the entry, in line order: an income or expense can be paid through several.
+     *
+     * @return Collection<int, Account>
+     */
+    public function paymentAccounts(): Collection
+    {
+        return $this->lines->filter(fn (JournalLine $line): bool => $line->account->isPaymentMethod())->map->account->values();
+    }
+
     /** Paid so far on a bill; requires withOutstanding(). */
     public function paidAmount(): int
     {
@@ -152,10 +170,10 @@ class JournalEntry extends Model
         $query->whereIn('company_id', Company::visibleTo($user)->select('id'));
     }
 
-    /** Entries that count towards balances and totals. */
+    /** Entries that count towards balances and totals: not voided and not in the Trash (also when trashed ones are included). */
     public function scopePosted(Builder $query): void
     {
-        $query->whereNull('voided_at');
+        $query->whereNull($query->qualifyColumn('voided_at'))->whereNull($query->qualifyColumn('deleted_at'));
     }
 
     /** Posted income and expense entries that still have an outstanding balance. */
@@ -228,6 +246,7 @@ class JournalEntry extends Model
         $settled = DB::table('journal_entries as settlements')
             ->whereColumn('settlements.bill_id', 'journal_entries.id')
             ->whereNull('settlements.voided_at')
+            ->whereNull('settlements.deleted_at')
             ->selectRaw('COALESCE(SUM(settlements.amount), 0)');
 
         return [

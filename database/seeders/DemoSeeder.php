@@ -254,8 +254,8 @@ class DemoSeeder extends Seeder
         }
         $funds[$methodId] += $type === EntryType::Income ? $paid : -$paid;
 
-        return $this->ledger->record($company, $type, ['entry_date' => $date->toDateString(), 'amount' => $amount, 'paid_amount' => $paid,
-            'category_account_id' => $categoryId, 'payment_account_id' => $paid > 0 ? $methodId : null, 'party_id' => $partyId,
+        return $this->ledger->record($company, $type, ['entry_date' => $date->toDateString(), 'amount' => $amount,
+            'payments' => $paid > 0 ? [['account_id' => $methodId, 'amount' => $paid]] : [], 'category_account_id' => $categoryId, 'party_id' => $partyId,
             'due_date' => $paid < $amount ? $due?->toDateString() : null, 'description' => $description, 'reference' => $reference], $this->owner);
     }
 

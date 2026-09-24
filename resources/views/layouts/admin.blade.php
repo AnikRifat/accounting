@@ -84,6 +84,7 @@
             {{ $slot }}
         </main>
         @can('companies.create')<livewire:create-company-drawer />@endcan
+        @canany(['accounts.delete', 'parties.delete', 'companies.delete'])<livewire:delete-record-drawer />@endcanany
     </div>
 </div>
 @livewireScripts

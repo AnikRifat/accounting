@@ -34,6 +34,7 @@ class EntryExportController extends Controller
                 $status = $entry->dueStatus();
                 $method = match (true) {
                     $entry->type === EntryType::Transfer => $entry->creditAccount()?->label().' → '.$entry->debitAccount()?->label(),
+                    $entry->type->isBill() => $entry->paymentAccounts()->map->label()->join(', '),
                     default => $entry->paymentAccount()?->label(),
                 };
                 $paid = match (true) {

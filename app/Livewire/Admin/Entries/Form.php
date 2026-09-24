@@ -46,7 +46,7 @@ class Form extends Component
     #[Locked]
     public string $type = 'income';
 
-    /** Whether "paid now" still mirrors the total, until the user changes it. */
+    /** Whether the only payment row's amount still mirrors the total, until the user changes it or adds a row. */
     #[Locked]
     public bool $paidFollowsTotal = true;
 
@@ -62,9 +62,12 @@ class Form extends Component
 
     public string $amount = '';
 
-    public string $paidAmount = '';
-
-    public string $paymentAccountId = '';
+    /**
+     * The paid-now part of an income or expense, one row per payment method. Rows left blank or at zero are skipped on save.
+     *
+     * @var list<array{account: string, amount: string}>
+     */
+    public array $payments = [];
 
     public string $dueDate = '';
 
@@ -115,20 +118,43 @@ class Form extends Component
         abort_unless($company?->is_active, 404);
         $this->companyId = $company->id;
         $this->entryDate = today()->toDateString();
-        $this->paymentAccountId = $this->defaultPaymentMethod();
+        $this->payments = [['account' => $this->defaultPaymentMethod(), 'amount' => '']];
         $this->paidBy = (string) auth()->id();
     }
 
     public function updatedAmount(): void
     {
-        if ($this->paidFollowsTotal) {
-            $this->paidAmount = $this->amount;
+        if ($this->paidFollowsTotal && count($this->payments) === 1) {
+            $this->payments[0]['amount'] = $this->amount;
         }
     }
 
-    public function updatedPaidAmount(): void
+    public function updatedPayments(): void
     {
-        $this->paidFollowsTotal = $this->paidAmount === $this->amount;
+        $this->paidFollowsTotal = $this->followsTotal();
+    }
+
+    /** Adds a payment row with an unused active method, prefilled with what is still unpaid. */
+    public function addPayment(): void
+    {
+        if (count($this->payments) >= LedgerService::MAX_PAYMENTS) {
+            return;
+        }
+        $used = array_column($this->payments, 'account');
+        $method = $this->accountsOf($this->visibleCompanyId(), [])->first(fn (Account $account): bool => $account->isPaymentMethod()
+            && ! in_array((string) $account->id, $used, true));
+        $unpaid = $this->paisa($this->amount) - $this->paidNow();
+        $this->payments[] = ['account' => (string) $method?->id, 'amount' => $unpaid > 0 ? Money::toInput($unpaid) : ''];
+        $this->paidFollowsTotal = false;
+    }
+
+    public function removePayment(int $index): void
+    {
+        if (count($this->payments) > 1 && isset($this->payments[$index])) {
+            unset($this->payments[$index]);
+            $this->payments = array_values($this->payments);
+            $this->paidFollowsTotal = $this->followsTotal();
+        }
     }
 
     /** Quick "add party" for the selected company; creates a custom (non-employee) party. */
@@ -196,8 +222,8 @@ class Form extends Component
             return null;
         }
         $type = EntryType::from($this->type);
-        if ($type->isBill() && $this->paidFollowsTotal) {
-            $this->paidAmount = $this->amount;
+        if ($type->isBill()) {
+            $this->updatedAmount();
         }
         $money = fn (bool $allowZero): Closure => function (string $attribute, mixed $value, Closure $fail) use ($allowZero): void {
             if (! Money::isValidInput((string) $value) || (! $allowZero && Money::toPaisa((string) $value) === 0)) {
@@ -213,8 +239,10 @@ class Form extends Component
         ] + ($type->isBill() ? [
             'categoryAccountId' => ['required', 'integer'],
             'partyId' => ['nullable', 'integer'],
-            'paidAmount' => ['required', 'string', $money(true)],
-            'paymentAccountId' => ['nullable', 'integer'],
+            'payments' => ['array', 'max:'.LedgerService::MAX_PAYMENTS],
+            'payments.*' => ['array:account,amount'],
+            'payments.*.account' => ['nullable', 'integer'],
+            'payments.*.amount' => ['nullable', 'string', $money(true)],
             'dueDate' => ['nullable', 'date_format:Y-m-d'],
             'paidBy' => ['required', 'integer'],
         ] : [
@@ -224,10 +252,24 @@ class Form extends Component
         $this->validate($rules, [], $this->attributeLabels());
         $data = ['entry_date' => $this->entryDate, 'amount' => Money::toPaisa($this->amount),
             'reference' => trim($this->reference), 'description' => trim($this->description)];
+        /** @var array<int, int> $rowOf posted payment index → form row */
+        $rowOf = [];
         if ($type->isBill()) {
-            $paid = Money::toPaisa($this->paidAmount);
-            $data += ['paid_amount' => $paid, 'category_account_id' => (int) $this->categoryAccountId,
-                'payment_account_id' => $paid > 0 && $this->paymentAccountId !== '' ? (int) $this->paymentAccountId : null,
+            $payments = [];
+            foreach ($this->payments as $row => $payment) {
+                $paid = $this->paisa($payment['amount'] ?? '');
+                if ($paid === 0) {
+                    continue;
+                }
+                if (($payment['account'] ?? '') === '') {
+                    $this->addError("payments.{$row}.account", __('Choose a payment method.'));
+
+                    return null;
+                }
+                $rowOf[count($payments)] = $row;
+                $payments[] = ['account_id' => (int) $payment['account'], 'amount' => $paid];
+            }
+            $data += ['payments' => $payments, 'category_account_id' => (int) $this->categoryAccountId,
                 'party_id' => $this->partyId !== '' ? (int) $this->partyId : null, 'due_date' => $this->dueDate !== '' ? $this->dueDate : null,
                 'paid_by' => $this->paidBy !== '' ? (int) $this->paidBy : null];
         } else {
@@ -240,7 +282,10 @@ class Form extends Component
                 : $ledger->record($company, $type, $data, $user);
         } catch (ValidationException $exception) {
             foreach ($exception->errors() as $key => $messages) {
-                $this->addError(Str::camel($key), $messages[0]);
+                $field = preg_match('/^payments\.(\d+)\.(account_id|amount)$/', $key, $match)
+                    ? 'payments.'.($rowOf[(int) $match[1]] ?? $match[1]).'.'.($match[2] === 'amount' ? 'amount' : 'account')
+                    : Str::camel($key);
+                $this->addError($field, $messages[0]);
             }
 
             return null;
@@ -248,7 +293,8 @@ class Form extends Component
         $this->syncReferenceFile($saved, $user);
         $message = __('Entry :number saved.', ['number' => $saved->number]);
         if ($addAnother && ! $entry) {
-            $this->reset('amount', 'paidAmount', 'partyId', 'dueDate', 'reference', 'referenceFile', 'description', 'debitAccountId', 'creditAccountId');
+            $this->payments = [['account' => $this->payments[0]['account'] ?? $this->defaultPaymentMethod(), 'amount' => '']];
+            $this->reset('amount', 'partyId', 'dueDate', 'reference', 'referenceFile', 'description', 'debitAccountId', 'creditAccountId');
             $this->paidFollowsTotal = true;
             session()->now('success', $message);
             $this->js('document.getElementById('.json_encode($type->isBill() ? 'categoryAccountId' : 'creditAccountId').')?.focus()');
@@ -263,14 +309,14 @@ class Form extends Component
     public function render(): View
     {
         $type = EntryType::from($this->type);
-        $companyId = $this->companyId !== null && auth()->user()->canAccessCompany($this->companyId) ? $this->companyId : null;
-        $accounts = $this->accountsOf($companyId, [$this->categoryAccountId, $this->paymentAccountId, $this->debitAccountId, $this->creditAccountId]);
+        $companyId = $this->visibleCompanyId();
+        $accounts = $this->accountsOf($companyId, [$this->categoryAccountId, ...array_column($this->payments, 'account'), $this->debitAccountId, $this->creditAccountId]);
         $options = fn (Collection $items, string $placeholder): array => ['' => $placeholder] + $items
             ->mapWithKeys(fn (Account $account): array => [$account->id => $account->name.($account->is_active ? '' : ' ('.__('inactive').')')])->all();
         $methods = $options($accounts->filter(fn (Account $account): bool => $account->isPaymentMethod()), __('Select a payment method'));
         $settled = $this->entryId && $type->isBill() ? (int) JournalEntry::query()->where('bill_id', $this->entryId)->posted()->sum('amount') : 0;
-        $total = Money::isValidInput($this->amount) ? Money::toPaisa($this->amount) : 0;
-        $paid = Money::isValidInput($this->paidAmount) ? Money::toPaisa($this->paidAmount) : $total;
+        $total = $this->paisa($this->amount);
+        $paid = $this->paidNow();
         $company = $companyId ? Company::query()->find($companyId, ['id', 'name', 'is_active']) : null;
         $stored = $this->entryId ? JournalEntry::query()->with('creator:id,name')->find($this->entryId) : null;
         $currentFile = $stored?->getMedia(JournalEntry::REFERENCE_FILE)->first();
@@ -282,6 +328,9 @@ class Form extends Component
             'methods' => $methods,
             'parties' => $type->isBill() ? $this->partyOptions($companyId) : [],
             'showDue' => $type->isBill() && $paid < $total,
+            'paidNow' => $paid,
+            'unpaid' => max(0, $total - $paid),
+            'canAddPayment' => count($this->payments) < min(LedgerService::MAX_PAYMENTS, count($methods) - 1),
             'canChoosePayer' => auth()->user()->isRoot(),
             'payers' => $type->isBill() ? $this->payerOptions($companyId) : [],
             'payerName' => User::query()->whereKey((int) $this->paidBy)->value('name'),
@@ -310,11 +359,11 @@ class Form extends Component
         $this->reference = (string) $entry->reference;
         $this->description = (string) $entry->description;
         if ($entry->type->isBill()) {
-            $paidLine = $entry->lines->first(fn ($line): bool => $line->account->isPaymentMethod());
             $this->categoryAccountId = (string) $entry->categoryAccount()?->id;
-            $this->paymentAccountId = (string) ($paidLine?->account_id ?? $this->defaultPaymentMethod());
-            $this->paidAmount = Money::toInput($paidLine ? $paidLine->debit + $paidLine->credit : 0);
-            $this->paidFollowsTotal = $this->paidAmount === $this->amount;
+            $this->payments = $entry->lines->filter(fn ($line): bool => $line->account->isPaymentMethod())
+                ->map(fn ($line): array => ['account' => (string) $line->account_id, 'amount' => Money::toInput($line->debit + $line->credit)])
+                ->values()->all() ?: [['account' => $this->defaultPaymentMethod(), 'amount' => Money::toInput(0)]];
+            $this->paidFollowsTotal = $this->followsTotal();
             $this->partyId = (string) $entry->party_id;
             $this->dueDate = (string) $entry->due_date?->toDateString();
             $this->paidBy = (string) ($entry->paid_by ?? auth()->id());
@@ -322,6 +371,29 @@ class Form extends Component
             $this->debitAccountId = (string) $entry->debitAccount()?->id;
             $this->creditAccountId = (string) $entry->creditAccount()?->id;
         }
+    }
+
+    /** Whether there is one payment row and it pays the whole total. */
+    private function followsTotal(): bool
+    {
+        return count($this->payments) === 1 && $this->payments[0]['amount'] === $this->amount;
+    }
+
+    /** Sum of the payment rows, counting blank or invalid amounts as zero. */
+    private function paidNow(): int
+    {
+        return array_sum(array_map(fn (mixed $payment): int => $this->paisa(is_array($payment) ? $payment['amount'] ?? '' : ''), $this->payments));
+    }
+
+    /** Paisa of a taka input, or 0 when it is blank or invalid. */
+    private function paisa(mixed $value): int
+    {
+        return is_string($value) && Money::isValidInput($value) ? Money::toPaisa($value) : 0;
+    }
+
+    private function visibleCompanyId(): ?int
+    {
+        return $this->companyId !== null && auth()->user()->canAccessCompany($this->companyId) ? $this->companyId : null;
     }
 
     /**
@@ -436,7 +508,8 @@ class Form extends Component
         $transfer = $this->type === EntryType::Transfer->value;
 
         return ['entryDate' => __('date'), 'amount' => $this->type === 'income' || $this->type === 'expense' ? __('total amount') : __('amount'),
-            'categoryAccountId' => __('category'), 'partyId' => __('party'), 'paidAmount' => __('paid now'), 'paymentAccountId' => __('payment method'),
+            'categoryAccountId' => __('category'), 'partyId' => __('party'), 'payments' => __('paid now'), 'payments.*.account' => __('payment method'),
+            'payments.*.amount' => $this->type === 'income' ? __('amount received') : __('amount paid'),
             'dueDate' => __('due date'), 'debitAccountId' => $transfer ? __('to') : __('payment method'), 'creditAccountId' => __('from'),
             'reference' => __('reference'), 'referenceFile' => __('reference file'), 'paidBy' => $this->type === 'income' ? __('received by') : __('paid by'),
             'description' => __('description')];

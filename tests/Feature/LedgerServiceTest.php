@@ -47,10 +47,15 @@ class LedgerServiceTest extends TestCase
     private function bill(Company $company, EntryType $type, int $total, ?int $paid = null, array $extra = []): JournalEntry
     {
         return $this->ledger->record($company, $type, $extra + [
-            'entry_date' => '2026-09-01', 'amount' => $total, 'paid_amount' => $paid ?? $total,
+            'entry_date' => '2026-09-01', 'amount' => $total, 'payments' => $this->paid($company, $paid ?? $total),
             'category_account_id' => $this->account($company, $type === EntryType::Income ? '4000' : '5100')->id,
-            'payment_account_id' => $this->account($company, '1000')->id,
         ], $this->owner);
+    }
+
+    /** @return list<array{account_id: int, amount: int}> one payment through $method, or none when $amount is 0 */
+    private function paid(Company $company, int $amount, string $method = '1000'): array
+    {
+        return $amount > 0 ? [['account_id' => $this->account($company, $method)->id, 'amount' => $amount]] : [];
     }
 
     private function transfer(Company $company, string $to, string $from, int $amount, array $extra = []): JournalEntry
@@ -139,6 +144,37 @@ class LedgerServiceTest extends TestCase
         $this->assertNull(JournalEntry::where('type', EntryType::Income)->orderBy('id')->first()->due_date);
     }
 
+    public function test_a_bill_can_be_paid_through_several_payment_methods(): void
+    {
+        $company = Company::factory()->create();
+        $split = fn (int ...$amounts): array => ['payments' => array_map(fn (string $method, int $amount): array => [
+            'account_id' => $this->account($company, $method)->id, 'amount' => $amount,
+        ], array_slice(['1000', '1010', '1020'], 0, count($amounts)), $amounts)];
+        $due = ['party_id' => Party::factory()->for($company)->create()->id, 'due_date' => '2026-09-30'];
+
+        $income = $this->bill($company, EntryType::Income, 1000, null, $split(600, 400));
+        $this->assertSame(['4000' => ['debit' => 0, 'credit' => 1000], '1000' => ['debit' => 600, 'credit' => 0], '1010' => ['debit' => 400, 'credit' => 0]],
+            $this->lines($income));
+        $expense = $this->bill($company, EntryType::Expense, 1000, null, $split(200, 300, 100) + $due);
+        $this->assertSame(['5100' => ['debit' => 1000, 'credit' => 0], '1000' => ['debit' => 0, 'credit' => 200], '1010' => ['debit' => 0, 'credit' => 300],
+            '1020' => ['debit' => 0, 'credit' => 100], '2000' => ['debit' => 0, 'credit' => 400]], $this->lines($expense));
+        $this->assertSame(400, $this->outstanding($expense));
+
+        $this->ledger->update($income, ['entry_date' => '2026-09-01', 'amount' => 1000, 'category_account_id' => $this->account($company, '4000')->id]
+            + $split(1000), $this->owner);
+        $this->assertSame(['4000' => ['debit' => 0, 'credit' => 1000], '1000' => ['debit' => 1000, 'credit' => 0]], $this->lines($income));
+        $this->assertSame(1000 - 200, $this->balance($company, '1000'));
+        $this->assertSame(-300, $this->balance($company, '1010'));
+
+        $cash = $this->account($company, '1000')->id;
+        $this->assertValidationError('payments.1.account_id', fn () => $this->bill($company, EntryType::Income, 1000, null,
+            ['payments' => [['account_id' => $cash, 'amount' => 500], ['account_id' => $cash, 'amount' => 500]]]));
+        $this->assertValidationError('payments.1.amount', fn () => $this->bill($company, EntryType::Income, 1000, null, $split(1000, 0)));
+        $this->assertValidationError('payments', fn () => $this->bill($company, EntryType::Income, 1000, null, $split(600, 401)));
+        $this->assertValidationError('payments', fn () => $this->bill($company, EntryType::Income, 1000, null, ['payments' => array_fill(0,
+            LedgerService::MAX_PAYMENTS + 1, ['account_id' => $cash, 'amount' => 1])]));
+    }
+
     public function test_balances_use_each_account_types_normal_side_and_an_optional_date(): void
     {
         $company = Company::factory()->create();
@@ -178,11 +214,12 @@ class LedgerServiceTest extends TestCase
         $this->assertValidationError('category_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['category_account_id' => $this->account($company, '5100')->id]));
         $this->assertValidationError('category_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['category_account_id' => $this->account($other, '4000')->id]));
         $this->assertValidationError('category_account_id', fn () => $this->bill($company, EntryType::Expense, 100, null, ['category_account_id' => $this->account($company, '2000')->id]));
-        $this->assertValidationError('payment_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['payment_account_id' => $this->account($company, '4900')->id]));
-        $this->assertValidationError('payment_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['payment_account_id' => $this->account($other, '1000')->id]));
-        $this->assertValidationError('payment_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['payment_account_id' => $inactiveMethod->id]));
-        $this->assertValidationError('payment_account_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['payment_account_id' => null]));
-        $this->assertValidationError('paid_amount', fn () => $this->bill($company, EntryType::Income, 100, 101));
+        $method = fn (?int $accountId): array => ['payments' => [['account_id' => $accountId, 'amount' => 100]]];
+        $this->assertValidationError('payments.0.account_id', fn () => $this->bill($company, EntryType::Income, 100, null, $method($this->account($company, '4900')->id)));
+        $this->assertValidationError('payments.0.account_id', fn () => $this->bill($company, EntryType::Income, 100, null, $method($this->account($other, '1000')->id)));
+        $this->assertValidationError('payments.0.account_id', fn () => $this->bill($company, EntryType::Income, 100, null, $method($inactiveMethod->id)));
+        $this->assertValidationError('payments.0.account_id', fn () => $this->bill($company, EntryType::Income, 100, null, $method(null)));
+        $this->assertValidationError('payments', fn () => $this->bill($company, EntryType::Income, 100, 101));
         $this->assertValidationError('amount', fn () => $this->bill($company, EntryType::Income, 0, 0));
         $this->assertValidationError('party_id', fn () => $this->bill($company, EntryType::Income, 100, 40, ['due_date' => '2026-09-30']));
         $this->assertValidationError('party_id', fn () => $this->bill($company, EntryType::Income, 100, null, ['party_id' => $foreignParty->id]));
@@ -244,14 +281,14 @@ class LedgerServiceTest extends TestCase
         $this->settle($bill, 600_00);
         $editor = User::factory()->create(['role' => 'accountant']);
         $editor->companies()->attach($company);
-        $data = ['entry_date' => '2026-09-01', 'amount' => 1_000_00, 'paid_amount' => 0, 'category_account_id' => $this->account($company, '5200')->id,
-            'payment_account_id' => $this->account($company, '1000')->id, 'party_id' => $party->id, 'due_date' => '2026-10-15'];
+        $data = ['entry_date' => '2026-09-01', 'amount' => 1_000_00, 'payments' => [], 'category_account_id' => $this->account($company, '5200')->id,
+            'party_id' => $party->id, 'due_date' => '2026-10-15'];
 
         $this->assertValidationError('amount', fn () => $this->ledger->update($bill, ['amount' => 500_00] + $data, $editor));
-        $this->assertValidationError('amount', fn () => $this->ledger->update($bill, ['paid_amount' => 500_00] + $data, $editor));
+        $this->assertValidationError('amount', fn () => $this->ledger->update($bill, ['payments' => $this->paid($company, 500_00)] + $data, $editor));
         $this->assertValidationError('party_id', fn () => $this->ledger->update($bill, ['party_id' => $otherParty->id] + $data, $editor));
         $this->assertValidationError('entry_date', fn () => $this->ledger->update($bill, ['entry_date' => '2026-09-11', 'due_date' => '2026-10-15'] + $data, $editor));
-        $updated = $this->ledger->update($bill, ['amount' => 1_200_00, 'paid_amount' => 200_00] + $data, $editor);
+        $updated = $this->ledger->update($bill, ['amount' => 1_200_00, 'payments' => $this->paid($company, 200_00)] + $data, $editor);
 
         $this->assertSame([$bill->number, $editor->id, '2026-10-15'], [$updated->number, $updated->updated_by, $updated->fresh()->due_date->toDateString()]);
         $this->assertSame(400_00, $this->outstanding($bill));
@@ -284,8 +321,8 @@ class LedgerServiceTest extends TestCase
         $this->account($company, '5100')->update(['is_active' => false]);
         $this->account($company, '1000')->update(['is_active' => false]);
 
-        $this->ledger->update($entry, ['entry_date' => '2026-09-01', 'amount' => 900_00, 'paid_amount' => 900_00,
-            'category_account_id' => $this->account($company, '5100')->id, 'payment_account_id' => $this->account($company, '1000')->id], $this->owner);
+        $this->ledger->update($entry, ['entry_date' => '2026-09-01', 'amount' => 900_00, 'payments' => $this->paid($company, 900_00),
+            'category_account_id' => $this->account($company, '5100')->id], $this->owner);
 
         $this->assertSame(900_00, $this->balance($company, '5100'));
     }
@@ -327,7 +364,7 @@ class LedgerServiceTest extends TestCase
         [$assigned, $other] = Company::factory()->count(2)->create();
         $dataEntry = User::factory()->create(['role' => 'data-entry']);
         $dataEntry->companies()->attach($assigned);
-        $data = fn (Company $company): array => ['entry_date' => '2026-09-01', 'amount' => 100, 'paid_amount' => 0, 'due_date' => '2026-09-30',
+        $data = fn (Company $company): array => ['entry_date' => '2026-09-01', 'amount' => 100, 'payments' => [], 'due_date' => '2026-09-30',
             'party_id' => Party::factory()->for($company)->create()->id, 'category_account_id' => $this->account($company, '4000')->id];
         $settlement = ['entry_date' => '2026-09-02', 'amount' => 50, 'payment_account_id' => $this->account($assigned, '1000')->id];
 

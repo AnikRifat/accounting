@@ -61,14 +61,19 @@ class EntriesTest extends TestCase
     /** Records an income (4000) or expense (5100) bill through cash (1000); pass paid < total with party and due date for a due. */
     private function bill(Company $company, EntryType $type, int $total, User $actor, array $extra = []): JournalEntry
     {
-        return app(LedgerService::class)->record($company, $type, $extra + ['entry_date' => '2026-09-01', 'amount' => $total, 'paid_amount' => $total,
-            'category_account_id' => (int) $this->accountId($company, $type === EntryType::Income ? '4000' : '5100'),
-            'payment_account_id' => (int) $this->accountId($company, '1000')], $actor);
+        return app(LedgerService::class)->record($company, $type, $extra + ['entry_date' => '2026-09-01', 'amount' => $total,
+            'payments' => $this->cash($company, $total), 'category_account_id' => (int) $this->accountId($company, $type === EntryType::Income ? '4000' : '5100')], $actor);
+    }
+
+    /** @return list<array{account_id: int, amount: int}> one cash (1000) payment, or none when $amount is 0 */
+    private function cash(Company $company, int $amount): array
+    {
+        return $amount > 0 ? [['account_id' => (int) $this->accountId($company, '1000'), 'amount' => $amount]] : [];
     }
 
     private function dueBill(Company $company, EntryType $type, int $total, User $actor, array $extra = []): JournalEntry
     {
-        return $this->bill($company, $type, $total, $actor, $extra + ['paid_amount' => 0, 'due_date' => '2026-09-30',
+        return $this->bill($company, $type, $total, $actor, $extra + ['payments' => [], 'due_date' => '2026-09-30',
             'party_id' => Party::factory()->for($company)->create()->id]);
     }
 
@@ -79,8 +84,8 @@ class EntriesTest extends TestCase
         $this->context($second);
 
         Livewire::test(Form::class, ['type' => 'income'])->assertSet('companyId', $second->id)
-            ->assertSet('paymentAccountId', $this->accountId($second, '1000'))->assertSee($second->name)
-            ->set('categoryAccountId', $this->accountId($second, '4000'))->set('amount', '1,25,000.50')->assertSet('paidAmount', '1,25,000.50')
+            ->assertSet('payments.0.account', $this->accountId($second, '1000'))->assertSee($second->name)
+            ->set('categoryAccountId', $this->accountId($second, '4000'))->set('amount', '1,25,000.50')->assertSet('payments.0.amount', '1,25,000.50')
             ->set('reference', 'INV-7')->call('save')->assertHasNoErrors()->assertRedirect(route('admin.entries.index'));
 
         $entry = JournalEntry::sole();
@@ -135,8 +140,8 @@ class EntriesTest extends TestCase
         $this->actingAs($this->user('data-entry', $company));
 
         $form = Livewire::test(Form::class, ['type' => 'expense'])->set('categoryAccountId', $this->accountId($company, '5400'))
-            ->set('amount', '10000')->set('paidAmount', '4000')->assertViewHas('showDue', true)
-            ->set('paymentAccountId', $this->accountId($company, '1020'))
+            ->set('amount', '10000')->set('payments.0.amount', '4000')->assertViewHas('showDue', true)
+            ->set('payments.0.account', $this->accountId($company, '1020'))
             ->call('save')->assertHasErrors(['partyId', 'dueDate']);
         $form->assertSee('Karim Traders')->set('partyId', (string) $party->id)
             ->set('dueDate', '2026-01-01')->set('entryDate', '2026-09-01')->call('save')->assertHasErrors('dueDate')
@@ -145,6 +150,29 @@ class EntriesTest extends TestCase
         $entry = JournalEntry::query()->withOutstanding()->sole();
         $this->assertSame([10_000_00, 6_000_00, $party->id, '2026-10-01'], [$entry->amount, $entry->outstanding, $entry->party_id, $entry->due_date->toDateString()]);
         $this->assertSame(4_000_00, -app(LedgerService::class)->balance($company->accounts()->where('code', '1020')->sole()));
+    }
+
+    public function test_an_income_can_be_split_across_payment_methods_and_edited(): void
+    {
+        $company = Company::factory()->create();
+        $this->actingAs($this->user('accountant', $company));
+        [$cash, $bank, $bkash] = [$this->accountId($company, '1000'), $this->accountId($company, '1010'), $this->accountId($company, '1020')];
+
+        $form = Livewire::test(Form::class, ['type' => 'income'])->set('categoryAccountId', $this->accountId($company, '4000'))
+            ->set('amount', '1000')->set('payments.0.amount', '600')
+            ->call('addPayment')->assertSet('payments.1', ['account' => $bank, 'amount' => '400.00'])->assertViewHas('unpaid', 0)
+            ->call('addPayment')->assertSet('payments.2', ['account' => $bkash, 'amount' => ''])
+            ->set('payments.2.amount', '1')->call('save')->assertHasErrors('payments')
+            ->set('payments.2.amount', '')->set('payments.1.account', $cash)->call('save')->assertHasErrors('payments.1.account')
+            ->set('payments.1.account', $bank)->call('removePayment', 2)->assertCount('payments', 2)
+            ->call('save')->assertHasNoErrors();
+
+        $entry = JournalEntry::sole();
+        $ledger = app(LedgerService::class);
+        $this->assertSame([600_00, 400_00], [$ledger->balance(Account::find($cash)), $ledger->balance(Account::find($bank))]);
+        Livewire::test(Form::class, ['entry' => $entry])->assertSet('payments', [['account' => $cash, 'amount' => '600.00'], ['account' => $bank, 'amount' => '400.00']])
+            ->assertSet('paidFollowsTotal', false)->call('removePayment', 0)->set('payments.0.amount', '1000')->call('save')->assertHasNoErrors();
+        $this->assertSame([0, 1_000_00], [$ledger->balance(Account::find($cash)), $ledger->balance(Account::find($bank))]);
     }
 
     public function test_quick_add_party_and_save_and_add_another(): void
@@ -213,10 +241,10 @@ class EntriesTest extends TestCase
         $this->assertLocked(fn () => Livewire::test(Form::class, ['type' => 'income'])->set('companyId', $other->id));
         $income()->set('categoryAccountId', $this->accountId($other, '4000'))->call('save')->assertHasErrors('categoryAccountId');
         $income()->set('categoryAccountId', $this->accountId($mine, '5100'))->call('save')->assertHasErrors('categoryAccountId');
-        $income()->set('paymentAccountId', $this->accountId($other, '1000'))->call('save')->assertHasErrors('paymentAccountId');
-        $income()->set('paymentAccountId', $this->accountId($mine, '4900'))->call('save')->assertHasErrors('paymentAccountId');
+        $income()->set('payments.0.account', $this->accountId($other, '1000'))->call('save')->assertHasErrors('payments.0.account');
+        $income()->set('payments.0.account', $this->accountId($mine, '4900'))->call('save')->assertHasErrors('payments.0.account');
         $income()->set('partyId', (string) $foreignParty->id)->call('save')->assertHasErrors('partyId');
-        $income()->set('paidAmount', '150')->call('save')->assertHasErrors('paidAmount');
+        $income()->set('payments.0.amount', '150')->call('save')->assertHasErrors('payments');
         $income()->set('amount', '0.00')->call('save')->assertHasErrors('amount');
         Livewire::test(Form::class, ['type' => 'income'])->set('addingParty', true)->set('newPartyName', 'Mine only')->call('addParty')->assertHasNoErrors();
         $this->assertSame($mine->id, Party::where('name', 'Mine only')->sole()->company_id);
@@ -268,13 +296,13 @@ class EntriesTest extends TestCase
     {
         [$mine, $other] = Company::factory()->count(2)->create();
         $owner = User::factory()->create(['role' => 'owner']);
-        $bill = $this->dueBill($mine, EntryType::Expense, 1_000_00, $owner, ['paid_amount' => 200_00]);
+        $bill = $this->dueBill($mine, EntryType::Expense, 1_000_00, $owner, ['payments' => $this->cash($mine, 200_00)]);
         app(LedgerService::class)->settle($bill, ['entry_date' => '2026-09-05', 'amount' => 500_00, 'payment_account_id' => (int) $this->accountId($mine, '1010')], $owner);
         $accountant = $this->user('accountant', $mine);
         $this->actingAs($accountant);
 
         $this->get(route('admin.entries.edit', $bill))->assertOk()->assertSee('৳500.00 has already been settled');
-        $form = Livewire::test(Form::class, ['entry' => $bill])->assertSet('paidAmount', '200.00')->assertSet('amount', '1000.00')->assertSet('companyId', $mine->id);
+        $form = Livewire::test(Form::class, ['entry' => $bill])->assertSet('payments', [['account' => $this->accountId($mine, '1000'), 'amount' => '200.00']])->assertSet('amount', '1000.00')->assertSet('companyId', $mine->id);
         $this->assertLocked(fn () => Livewire::test(Form::class, ['entry' => $bill])->set('companyId', $other->id));
         $form->set('amount', '600')->call('save')->assertHasErrors('amount');
         $form->set('amount', '1,500')->set('categoryAccountId', $this->accountId($mine, '5200'))->call('save')
@@ -357,7 +385,7 @@ class EntriesTest extends TestCase
         $this->travelTo('2026-09-24 10:00');
         $this->bill($mine, EntryType::Income, 10_000_00, $owner, ['description' => 'Consulting fee']);
         $voided = $this->bill($mine, EntryType::Income, 99_000_00, $owner, ['description' => 'Wrong receipt']);
-        $overdue = $this->bill($mine, EntryType::Expense, 3_000_00, $owner, ['entry_date' => '2026-09-10', 'paid_amount' => 1_000_00, 'party_id' => $customer->id, 'due_date' => '2026-09-20']);
+        $overdue = $this->bill($mine, EntryType::Expense, 3_000_00, $owner, ['entry_date' => '2026-09-10', 'payments' => $this->cash($mine, 1_000_00), 'party_id' => $customer->id, 'due_date' => '2026-09-20']);
         $partly = $this->dueBill($mine, EntryType::Income, 2_000_00, $owner, ['party_id' => $customer->id]);
         app(LedgerService::class)->settle($partly, ['entry_date' => '2026-09-05', 'amount' => 500_00, 'payment_account_id' => (int) $this->accountId($mine, '1000')], $owner);
         $this->bill($second, EntryType::Expense, 500_00, $owner);
@@ -399,7 +427,7 @@ class EntriesTest extends TestCase
         $owner = User::factory()->create(['role' => 'owner', 'name' => '@SUM(A1)']);
         $party = Party::factory()->for($mine)->create(['name' => '=HYPERLINK("e")']);
         $mine->accounts()->where('code', '5100')->update(['code' => '=5100']);
-        $bill = $this->bill($mine, EntryType::Expense, 25_000_00, $owner, ['category_account_id' => (int) $this->accountId($mine, '=5100'), 'paid_amount' => 5_000_00, 'party_id' => $party->id, 'due_date' => '2026-09-30',
+        $bill = $this->bill($mine, EntryType::Expense, 25_000_00, $owner, ['category_account_id' => (int) $this->accountId($mine, '=5100'), 'payments' => $this->cash($mine, 5_000_00), 'party_id' => $party->id, 'due_date' => '2026-09-30',
             'description' => '=HYPERLINK("x")', 'reference' => '+1+1']);
         $payment = app(LedgerService::class)->settle($bill, ['entry_date' => '2026-09-02', 'amount' => 8_000_00, 'payment_account_id' => (int) $this->accountId($mine, '1010')], $owner);
         $voided = $this->bill($mine, EntryType::Income, 100, $owner, ['entry_date' => '2026-09-03']);

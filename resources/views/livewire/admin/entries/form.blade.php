@@ -27,11 +27,26 @@
             </div>
         </x-card>
         @if($isBill)
-            <x-card :title="__('Payment')" :description="__('Enter less than the total to record the rest as due.')">
+            <x-card :title="__('Payment')" :description="__('Split the amount across payment methods, or enter less than the total to record the rest as due.')">
                 <div class="form-grid">
                     <x-form.input name="amount" :label="__('Total amount (৳)')" wire:model.live.debounce.400ms="amount" required inputmode="decimal" autocomplete="off" :help="__('For example 1,25,000.50')" />
-                    <x-form.input name="paidAmount" :label="$type === 'income' ? __('Received now (৳)') : __('Paid now (৳)')" wire:model.live.debounce.400ms="paidAmount" required inputmode="decimal" autocomplete="off" />
-                    <div wire:key="method-{{ $companyId }}"><x-form.select name="paymentAccountId" :label="__('Payment method')" wire:model="paymentAccountId" :options="$methods" /></div>
+                    <div class="stack-sm span-full" role="group" aria-labelledby="payments-heading">
+                        <p id="payments-heading" class="field-label">{{ $type === 'income' ? __('Received now') : __('Paid now') }}</p>
+                        @foreach($payments as $index => $payment)
+                            <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-3" wire:key="payment-{{ $companyId }}-{{ $index }}">
+                                <x-form.select :name="'payments.'.$index.'.account'" :label="__('Payment method')" wire:model.live="payments.{{ $index }}.account" :options="$methods" />
+                                <x-form.input :name="'payments.'.$index.'.amount'" :label="__('Amount (৳)')" wire:model.live.debounce.400ms="payments.{{ $index }}.amount" inputmode="decimal" autocomplete="off" />
+                                @if(count($payments) > 1)
+                                    <x-button class="mt-6" variant="ghost" icon="trash" :label="__('Remove this payment method')" wire:click="removePayment({{ $index }})" />
+                                @endif
+                            </div>
+                        @endforeach
+                        @error('payments')<p class="error">{{ $message }}</p>@enderror
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            @if($canAddPayment)<button class="text-link text-sm" type="button" wire:click="addPayment">{{ __('+ Add another payment method') }}</button>@else<span></span>@endif
+                            <p class="muted text-sm" aria-live="polite">{{ $type === 'income' ? __('Received now') : __('Paid now') }} <x-money :value="$paidNow" /> · {{ __('Due') }} <x-money :value="$unpaid" /></p>
+                        </div>
+                    </div>
                     @if($showDue)
                         <x-form.date name="dueDate" :label="__('Due date for the rest')" wire:model="dueDate" required />
                     @endif

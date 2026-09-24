@@ -14,6 +14,7 @@ use App\Livewire\Admin\Dashboard;
 use App\Livewire\Admin\Entries\Form as EntryForm;
 use App\Livewire\Admin\Entries\Index as EntryIndex;
 use App\Livewire\Admin\Entries\Settle as EntrySettle;
+use App\Livewire\Admin\Entries\Trash as EntryTrash;
 use App\Livewire\Admin\Media\Index as MediaIndex;
 use App\Livewire\Admin\Parties\Form as PartyForm;
 use App\Livewire\Admin\Parties\Index as PartyIndex;
@@ -65,6 +66,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
     Route::livewire('/accounts/{account}/edit', AccountForm::class)->middleware('can:accounts.manage')->name('accounts.edit');
     Route::livewire('/entries', EntryIndex::class)->middleware('can:entries.view')->name('entries.index');
     Route::get('/entries/export', EntryExportController::class)->middleware('can:entries.view')->name('entries.export');
+    Route::livewire('/entries/trash', EntryTrash::class)->middleware('can:entries.delete')->name('entries.trash');
     Route::livewire('/entries/create/{type}', EntryForm::class)->whereIn('type', ['income', 'expense', 'transfer'])->middleware(['can:entries.create', 'company.selected'])->name('entries.create');
     Route::livewire('/entries/{entry}/edit', EntryForm::class)->middleware('can:entries.update')->name('entries.edit');
     Route::livewire('/entries/{entry}/settle', EntrySettle::class)->middleware('can:entries.create')->name('entries.settle');
