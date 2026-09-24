@@ -13,6 +13,7 @@ use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,6 +45,7 @@ class DemoSeederTest extends TestCase
 
         $ledger = app(LedgerService::class);
         $this->actingAs($owner);
+        Livewire::test(TrialBalance::class)->assertViewHas('consolidated', true)->assertViewHas('balanced', true);
         foreach (Company::all() as $company) {
             $employees = Employee::where('company_id', $company->id)->count();
             $customParties = Party::where('company_id', $company->id)->whereNull('employee_id')->count();
@@ -51,7 +53,8 @@ class DemoSeederTest extends TestCase
             $this->assertTrue($customParties >= 4 && $customParties <= 6, "{$company->code} has {$customParties} custom parties.");
             $this->assertGreaterThanOrEqual(4, $company->accounts()->paymentMethods()->count());
             $this->assertTrue($company->accounts()->paymentMethods()->where('code', '>', '1020')->whereNotNull('details')->exists());
-            Livewire::test(TrialBalance::class)->set('company', (string) $company->id)
+            session([CompanyContext::SESSION_KEY => $company->id]);
+            Livewire::test(TrialBalance::class)->assertViewHas('consolidated', false)
                 ->assertViewHas('balanced', true)->assertViewHas('debitTotal', fn (int $total): bool => $total > 0);
 
             $dues = $ledger->dues([$company->id]);

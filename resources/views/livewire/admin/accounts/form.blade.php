@@ -1,9 +1,9 @@
 <div>
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ $accountId ? __('Edit account') : __('Add account') }}</h1><p class="muted">{{ __('Codes and names are unique within a company.') }}</p></div></div>
+    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ $accountId ? __('Edit account') : __('Add account') }}</h1><p class="muted">{{ __(':company · codes and names are unique within a company.', ['company' => $companyName]) }}</p></div></div>
     <form wire:submit="save" class="stack">
+        @error('companyId')<p class="error" role="alert">{{ $message }}</p>@enderror
         <div class="panel"><div class="form-grid">
-            <x-form.select name="companyId" :label="__('Company')" wire:model="companyId" :options="['' => __('Select a company')] + $companies" :disabled="$accountId !== null" :help="$accountId ? __('The company of an account cannot be changed.') : null" />
             <x-form.select name="type" :label="__('Type')" wire:model.live="type" :options="$types" :disabled="$hasEntries" :help="$hasEntries ? __('The type is fixed once the account has entries.') : null" />
             <x-form.input name="code" :label="__('Code')" wire:model="code" required maxlength="20" />
             <x-form.input name="name" :label="__('Name')" wire:model="name" required maxlength="150" />

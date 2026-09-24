@@ -4,7 +4,6 @@
     <div class="panel stack">
         <div class="form-grid">
             <x-form.input name="search" :label="__('Search by name, code or phone')" wire:model.live.debounce.300ms="search" type="search" maxlength="100" />
-            <x-form.select name="companyId" :label="__('Company')" wire:model.live="companyId" :options="$companyOptions" />
             <x-form.select name="status" :label="__('Status')" wire:model.live="status" :options="['' => __('Any status'), 'active' => __('Active'), 'inactive' => __('Inactive')]" />
         </div>
         <div class="table-wrap"><table><thead><tr><th>{{ __('Employee') }}</th><th>{{ __('Company') }}</th><th>{{ __('Designation') }}</th><th>{{ __('Phone') }}</th><th>{{ __('Monthly salary') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>

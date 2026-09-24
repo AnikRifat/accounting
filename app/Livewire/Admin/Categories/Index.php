@@ -4,38 +4,37 @@ namespace App\Livewire\Admin\Categories;
 
 use App\Enums\AccountType;
 use App\Models\Account;
-use App\Models\Company;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 class Index extends Component
 {
-    public string $companyId = '';
-
-    public function mount(): void
+    /** Opens a category of another company: selects that company in the header, then edits the category there. */
+    public function editIn(int $accountId): void
     {
-        $this->companyId = (string) session('ledger.company_id', '');
+        Gate::authorize('accounts.manage');
+        $category = Account::query()->categories()->whereIn('company_id', auth()->user()->accessibleCompanyIds())->findOrFail($accountId);
+        app(CompanyContext::class)->select($category->company_id);
+        $this->redirectRoute('admin.categories.edit', ['category' => $category], navigate: true);
     }
 
     public function render(): View
     {
         Gate::authorize('accounts.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        // A forged company id falls back to a visible company.
-        $company = $companies->firstWhere('id', (int) $this->companyId) ?? $companies->first();
-        $this->companyId = (string) $company?->id;
-        if ($company) {
-            session(['ledger.company_id' => $company->id]);
-        }
-        $categories = $company ? Account::query()->where('company_id', $company->id)->categories()->orderBy('name')->get() : collect();
+        $context = app(CompanyContext::class);
+        $categories = Account::query()->whereIn('company_id', $context->companyIds())->categories()->with('company')->orderBy('name')->get();
+        $sides = [AccountType::Income->value => __('Income categories'), AccountType::Expense->value => __('Expense categories')];
 
         return view('livewire.admin.categories.index', [
-            'companies' => $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
-            'groups' => [
-                __('Income categories') => $categories->where('type', AccountType::Income),
-                __('Expense categories') => $categories->where('type', AccountType::Expense),
-            ],
+            'isAll' => $context->isAll(),
+            'hasCompanies' => $context->companyIds() !== [],
+            // In All mode one row stands for every company's category of the same type and name.
+            'groups' => collect($sides)->mapWithKeys(fn (string $heading, string $type): array => [$heading => $categories
+                ->filter(fn (Account $category): bool => $category->type->value === $type)
+                ->groupBy(fn (Account $category): string => mb_strtolower($category->name))
+                ->map(fn ($rows) => $rows->sortBy(fn (Account $category): string => $category->company->name)->values())]),
         ])->layout('layouts.admin');
     }
 }

@@ -5,19 +5,21 @@ namespace App\Http\Controllers\Admin;
 use App\Enums\EntryType;
 use App\Http\Controllers\Controller;
 use App\Models\JournalEntry;
+use App\Support\CompanyContext;
 use App\Support\Money;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/** Streams the filtered, company-scoped transaction list as CSV (UTF-8 with BOM for Excel). */
+/** Streams the filtered transaction list of the header's company scope as CSV (UTF-8 with BOM for Excel). */
 class EntryExportController extends Controller
 {
     public function __invoke(Request $request): StreamedResponse
     {
         Gate::authorize('entries.view');
         $query = JournalEntry::visibleTo($request->user())
-            ->filter($request->only(['company', 'from', 'to', 'type', 'account', 'party', 'status', 'search']))
+            ->whereIn('company_id', app(CompanyContext::class)->companyIds())
+            ->filter($request->only(['from', 'to', 'type', 'account', 'party', 'status', 'search']))
             ->withOutstanding()
             ->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'creator:id,name'])
             ->orderBy('entry_date')->orderBy('id');

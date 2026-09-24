@@ -31,10 +31,11 @@
         </nav>
     </aside>
     <div>
-        <header class="topbar"><span class="muted">{{ __('Accounts workspace') }}</span><div class="flex items-center gap-4"><span class="text-sm font-semibold">{{ auth()->user()->name }}</span><form method="post" action="{{ route('logout') }}">@csrf <button class="btn btn-secondary" type="submit">{{ __('Sign out') }}</button></form></div></header>
+        <header class="topbar"><livewire:company-switcher /><div class="flex items-center gap-4"><span class="text-sm font-semibold">{{ auth()->user()->name }}</span><form method="post" action="{{ route('logout') }}">@csrf <button class="btn btn-secondary" type="submit">{{ __('Sign out') }}</button></form></div></header>
         <main id="main" class="content">
             {{ $slot }}
         </main>
+        @can('companies.create')<livewire:create-company-drawer />@endcan
     </div>
 </div>
 @livewireScripts

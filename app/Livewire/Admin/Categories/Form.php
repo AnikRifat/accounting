@@ -6,9 +6,10 @@ use App\Enums\AccountType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -17,7 +18,10 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\Features\SupportRedirects\Redirector;
 
-/** Income and expense categories are non-system income/expense accounts with an automatic code. */
+/**
+ * Income and expense categories are non-system income/expense accounts with an automatic code.
+ * With "All companies" in the header, a new category is added to every active company that lacks it.
+ */
 class Form extends Component
 {
     #[Locked]
@@ -26,7 +30,9 @@ class Form extends Component
     #[Locked]
     public bool $hasEntries = false;
 
-    public string $companyId = '';
+    /** The category's company, or the header company when creating; null means all companies. */
+    #[Locked]
+    public ?int $companyId = null;
 
     public string $name = '';
 
@@ -41,14 +47,12 @@ class Form extends Component
             $this->guard($category);
             $this->categoryId = $category->id;
             $this->hasEntries = $category->lines()->exists();
-            $this->companyId = (string) $category->company_id;
+            $this->companyId = $category->company_id;
             $this->name = $category->name;
             $this->type = $category->type->value;
             $this->isActive = $category->is_active;
         } else {
-            $companyIds = $this->activeCompanies()->pluck('id')->all();
-            $remembered = (int) session('ledger.company_id');
-            $this->companyId = (string) (in_array($remembered, $companyIds, true) ? $remembered : ($companyIds[0] ?? ''));
+            $this->companyId = app(CompanyContext::class)->selectedId();
         }
     }
 
@@ -58,14 +62,18 @@ class Form extends Component
         $existing = $this->categoryId ? Account::findOrFail($this->categoryId) : null;
         if ($existing) {
             $this->guard($existing);
-            $this->companyId = (string) $existing->company_id;
         }
-        // Validate the company alone first, so the unique rule below never runs against a company the user cannot use.
-        $this->validate(['companyId' => ['required', Rule::in($existing ? [$existing->company_id] : $this->activeCompanies()->pluck('id')->all())]], [], ['companyId' => __('company')]);
-        $companyId = (int) $this->companyId;
+        // The target companies are settled before any rule runs, so the unique rule never probes a company the user cannot use.
+        $companies = $existing ? collect([$existing->company]) : $this->targetCompanies();
+        if ($companies === null) {
+            $this->addError('company', __('The company in the header has changed or is inactive. Reload the page and try again.'));
+
+            return null;
+        }
         $this->name = trim($this->name);
+        $single = $companies->count() === 1 && ($existing || $this->companyId !== null);
         $data = $this->validate([
-            'name' => ['required', 'string', 'max:150', Rule::unique('accounts', 'name')->where('company_id', $companyId)->ignore($this->categoryId)],
+            'name' => ['required', 'string', 'max:150', ...($single ? [Rule::unique('accounts', 'name')->where('company_id', $companies->first()->id)->ignore($this->categoryId)] : [])],
             'type' => ['required', Rule::in([AccountType::Income->value, AccountType::Expense->value])],
             'isActive' => ['boolean'],
         ], [], ['name' => __('name'), 'type' => __('type')]);
@@ -75,15 +83,25 @@ class Form extends Component
 
             return null;
         }
+        $skipped = $existing ? collect() : $companies->filter(fn (Company $company): bool => $company->accounts()->where('name', $data['name'])->exists());
+        $targets = $companies->diff($skipped);
+        if ($targets->isEmpty()) {
+            $this->addError('name', __('Every company already has an account with this name.'));
+
+            return null;
+        }
+
         try {
-            DB::transaction(function () use ($existing, $companyId, $data, $type): void {
-                $company = Company::findOrFail($companyId);
-                $account = $existing ?? $company->accounts()->make();
-                // A category keeps its code unless it moves to the other side, whose codes live in another range.
-                if (! $existing || $type !== $existing->type) {
-                    $account->code = app(LedgerService::class)->nextCode($company, $type);
+            DB::transaction(function () use ($existing, $targets, $data, $type): void {
+                $ledger = app(LedgerService::class);
+                foreach ($targets as $company) {
+                    $account = $existing ?? $company->accounts()->make();
+                    // A category keeps its code unless it moves to the other side, whose codes live in another range.
+                    if (! $existing || $type !== $existing->type) {
+                        $account->code = $ledger->nextCode($company, $type);
+                    }
+                    $account->fill(['name' => $data['name'], 'type' => $type, 'is_cash' => false, 'is_active' => $data['isActive']])->save();
                 }
-                $account->fill(['name' => $data['name'], 'type' => $type, 'is_cash' => false, 'is_active' => $data['isActive']])->save();
             });
         } catch (ValidationException $exception) {
             // The only posting error here is a full code range.
@@ -91,27 +109,35 @@ class Form extends Component
 
             return null;
         }
-        session(['ledger.company_id' => $companyId]);
-        session()->flash('success', __('Category saved.'));
+        session()->flash('success', $skipped->isEmpty() ? __('Category saved.')
+            : __('Category saved. Skipped :companies, which already have an account with this name.', ['companies' => $skipped->pluck('name')->join(', ')]));
 
         return redirect()->route('admin.categories.index');
     }
 
     public function render(): View
     {
-        $companies = $this->categoryId ? Company::visibleTo(auth()->user()) : $this->activeCompanies();
-
         return view('livewire.admin.categories.form', [
-            'companies' => ['' => __('Select a company')] + $companies->orderBy('name')->get(['id', 'name', 'code'])
-                ->mapWithKeys(fn (Company $company): array => [$company->id => $company->name.' ('.$company->code.')'])->all(),
+            'companyName' => $this->companyId ? Company::visibleTo(auth()->user())->whereKey($this->companyId)->value('name') : __('All companies'),
             'types' => [AccountType::Income->value => __('Income'), AccountType::Expense->value => __('Expense')],
         ])->layout('layouts.admin');
     }
 
-    /** New categories can only be added to active companies the user can access. */
-    private function activeCompanies(): Builder
+    /**
+     * The companies a new category goes to: the header company this page was opened for, or every
+     * active visible company in All mode. Null when the header changed since, or the company is inactive.
+     *
+     * @return Collection<int, Company>|null
+     */
+    private function targetCompanies(): ?Collection
     {
-        return Company::visibleTo(auth()->user())->where('is_active', true);
+        $context = app(CompanyContext::class);
+        if ($context->selectedId() !== $this->companyId) {
+            return null;
+        }
+        $companies = $context->options()->whereIn('id', $context->companyIds())->where('is_active', true)->values();
+
+        return $companies->isEmpty() ? null : $companies;
     }
 
     /** Only categories of accessible companies exist on this screen. */

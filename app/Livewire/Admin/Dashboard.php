@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\JournalEntry;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 /**
- * Accounting overview for the visible companies (or one of them). Figures follow the viewer's abilities:
+ * Accounting overview for the header company context: one company, or every visible company combined. Figures follow the viewer's abilities:
  * income, expense and dues need `entries.view`, payment method balances `accounts.view`, the head count `employees.view`.
  */
 class Dashboard extends Component
@@ -25,34 +26,29 @@ class Dashboard extends Component
     /** Months shown in the income versus expense chart, including the current month. */
     private const TREND_MONTHS = 6;
 
-    /** A visible company id, or '' for all visible companies. */
-    public string $company = '';
-
     public function render(): View
     {
         Gate::authorize('dashboard.view');
         $user = auth()->user();
-        $companies = Company::visibleTo($user)->orderBy('name')->get(['id', 'name', 'code']);
-        if ($companies->isEmpty()) {
+        $context = app(CompanyContext::class);
+        if ($context->options()->isEmpty()) {
             return view('livewire.admin.dashboard', ['hasCompanies' => false])->layout('layouts.admin');
         }
-        if ($this->company !== '' && ! $companies->contains('id', (int) $this->company)) {
-            $this->company = '';
-        }
-        $companyIds = $this->company === '' ? $companies->pluck('id')->all() : [(int) $this->company];
+        $companyIds = $context->companyIds();
         $showEntries = Gate::allows('entries.view');
         $months = $showEntries ? $this->monthlyTotals($companyIds) : null;
         $chartMax = $months === null ? 0 : $this->niceCeiling(max(array_merge(array_column($months, 'income'), array_column($months, 'expense'))));
 
         return view('livewire.admin.dashboard', [
             'hasCompanies' => true,
-            'companyOptions' => ['' => __('All my companies')] + $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
+            'consolidated' => $context->isAll(),
+            'scopeLabel' => $context->isAll() ? __('All companies') : $context->company()->name,
             'months' => $months,
             'chartMax' => $chartMax,
             'recent' => $showEntries ? JournalEntry::query()->posted()->whereIn('company_id', $companyIds)->with(['company:id,name,code', 'party:id,name'])
                 ->orderByDesc('entry_date')->orderByDesc('id')->limit(10)->get() : null,
             'dues' => $showEntries ? $this->dueSummary($companyIds) : null,
-            'cash' => Gate::allows('accounts.view') ? $this->cashBalances($companies->whereIn('id', $companyIds)) : null,
+            'cash' => Gate::allows('accounts.view') ? $this->cashBalances($context->options()->whereIn('id', $companyIds)) : null,
             'activeEmployees' => Gate::allows('employees.view')
                 ? Employee::visibleTo($user)->whereIn('company_id', $companyIds)->where('is_active', true)->count() : null,
         ])->layout('layouts.admin');

@@ -5,24 +5,25 @@ namespace App\Livewire\Admin\Reports;
 use App\Enums\EntryType;
 use App\Models\Company;
 use App\Models\JournalEntry;
+use App\Models\Party;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Routing\Redirector;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Open receivables (income bills) and payables (expense bills) grouped by party, with totals per company.
+ * Open receivables (income bills) and payables (expense bills) of the header company context, grouped by party. In
+ * All mode every visible company is combined, the company is shown per party, and totals are given per company.
  * Outstanding and overdue are as of today in the application timezone (Asia/Dhaka).
  */
 class Dues extends Component
 {
-    /** A visible company id, or '' for all visible companies. */
-    #[Url(except: '')]
-    public string $company = '';
-
     /** 'receivable', 'payable' or '' for both. */
     #[Url(except: '')]
     public string $kind = '';
@@ -33,28 +34,35 @@ class Dues extends Component
     #[Url(except: false)]
     public bool $overdue = false;
 
-    public function updatedCompany(): void
+    /**
+     * Opens a party's statement. A statement needs one company, so in All mode this switches the header context to
+     * the party's company first; the party must belong to a company in the current scope.
+     */
+    public function openStatement(int $partyId): Redirector|RedirectResponse
     {
-        $this->party = '';
+        Gate::authorize('reports.view');
+        Gate::authorize('parties.view');
+        $context = app(CompanyContext::class);
+        $party = Party::query()->whereIn('company_id', $context->companyIds())->findOrFail($partyId);
+        $context->select($party->company_id);
+
+        return redirect()->route('admin.reports.party-statement', ['party' => $party->id]);
     }
 
     public function render(): View
     {
         Gate::authorize('reports.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        if (! $companies->contains('id', (int) $this->company)) {
-            $this->company = '';
-        }
+        $context = app(CompanyContext::class);
         if (! in_array($this->kind, ['', 'receivable', 'payable'], true)) {
             $this->kind = '';
         }
-        $companyIds = $this->company === '' ? $companies->pluck('id')->all() : [(int) $this->company];
+        $companyIds = $context->companyIds();
         $type = ['receivable' => EntryType::Income, 'payable' => EntryType::Expense][$this->kind] ?? null;
         $today = CarbonImmutable::today()->toDateString();
 
         $bills = app(LedgerService::class)->dues($companyIds, $type);
         $partyOptions = $bills->pluck('party')->filter()->unique('id')->sortBy('name')
-            ->mapWithKeys(fn ($party): array => [$party->id => $party->name])->all();
+            ->mapWithKeys(fn (Party $party): array => [$party->id => $party->name.($context->isAll() ? ' ('.$bills->firstWhere('party_id', $party->id)->company->code.')' : '')])->all();
         if (! array_key_exists((int) $this->party, $partyOptions)) {
             $this->party = '';
         }
@@ -64,10 +72,10 @@ class Dues extends Component
         $bills->load('lines.account');
 
         return view('livewire.admin.reports.dues', [
-            'companyOptions' => ['' => __('All my companies')] + $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
             'kindOptions' => ['' => __('Receivable and payable'), 'receivable' => __('Receivable (owed to us)'), 'payable' => __('Payable (we owe)')],
             'partyOptions' => ['' => __('All parties')] + $partyOptions,
-            'scopeLabel' => $this->company === '' ? __('All my companies') : $companies->firstWhere('id', (int) $this->company)->name,
+            'scopeLabel' => $context->isAll() ? __('All companies') : $context->company()->name,
+            'consolidated' => $context->isAll(),
             'sections' => [
                 'receivable' => $this->groupByParty($bills->where('type', EntryType::Income), $today),
                 'payable' => $this->groupByParty($bills->where('type', EntryType::Expense), $today),

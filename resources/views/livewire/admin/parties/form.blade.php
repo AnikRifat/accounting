@@ -1,9 +1,9 @@
 <div>
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ $partyId ? __('Edit party') : __('Add party') }}</h1><p class="muted">{{ __('A party belongs to one company. Employee parties are managed from the employee.') }}</p></div></div>
+    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ $partyId ? __('Edit party') : __('Add party') }}</h1><p class="muted">{{ __('Company: :name', ['name' => $companyName]) }}</p></div></div>
+    @error('company')<p class="error mb-4" role="alert">{{ $message }}</p>@enderror
     <form wire:submit="save" class="stack">
         <div class="panel"><h2>{{ __('Party details') }}</h2><div class="form-grid">
-            <x-form.select name="companyId" :label="__('Company')" wire:model="companyId" :options="$companyOptions" required :disabled="$partyId !== null" :help="$partyId ? __('A party cannot move to another company.') : __('Only active companies are listed.')" />
             <x-form.input name="name" :label="__('Name')" wire:model="name" required maxlength="150" />
             <x-form.input name="phone" :label="__('Phone')" type="tel" wire:model="phone" maxlength="40" autocomplete="off" />
             <x-form.input name="address" :label="__('Address')" wire:model="address" maxlength="255" autocomplete="off" />

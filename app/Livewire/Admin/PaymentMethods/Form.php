@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use App\Support\Money;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -28,7 +29,9 @@ class Form extends Component
     #[Locked]
     public ?int $paymentMethodId = null;
 
-    public string $companyId = '';
+    /** The payment method's company, or the header company when creating. */
+    #[Locked]
+    public ?int $companyId = null;
 
     public string $name = '';
 
@@ -48,15 +51,13 @@ class Form extends Component
         if ($paymentMethod?->exists) {
             $this->guard($paymentMethod);
             $this->paymentMethodId = $paymentMethod->id;
-            $this->companyId = (string) $paymentMethod->company_id;
+            $this->companyId = $paymentMethod->company_id;
             $this->name = $paymentMethod->name;
             $this->paymentType = $paymentMethod->payment_type?->value ?? PaymentType::Other->value;
             $this->details = $paymentMethod->details ?? '';
             $this->isActive = $paymentMethod->is_active;
         } else {
-            $companyIds = $this->activeCompanies()->pluck('id')->all();
-            $remembered = (int) session('ledger.company_id');
-            $this->companyId = (string) (in_array($remembered, $companyIds, true) ? $remembered : ($companyIds[0] ?? ''));
+            $this->companyId = app(CompanyContext::class)->company()?->id;
         }
         $this->openingDate = today()->toDateString();
     }
@@ -68,11 +69,15 @@ class Form extends Component
         $existing = $this->paymentMethodId ? Account::findOrFail($this->paymentMethodId) : null;
         if ($existing) {
             $this->guard($existing);
-            $this->companyId = (string) $existing->company_id;
         }
-        // Validate the company alone first, so the unique rule below never runs against a company the user cannot use.
-        $this->validate(['companyId' => ['required', Rule::in($existing ? [$existing->company_id] : $this->activeCompanies()->pluck('id')->all())]], [], ['companyId' => __('company')]);
-        $companyId = (int) $this->companyId;
+        // The company is settled before any rule runs, so the unique rule never probes a company the user cannot use.
+        $company = $existing?->company ?? $this->contextCompany();
+        if (! $company) {
+            $this->addError('company', __('The company in the header has changed or is inactive. Reload the page and try again.'));
+
+            return null;
+        }
+        $companyId = $company->id;
         foreach (['name', 'details', 'openingBalance', 'openingDate'] as $field) {
             $this->{$field} = trim($this->{$field});
         }
@@ -99,8 +104,7 @@ class Form extends Component
         }
 
         try {
-            DB::transaction(function () use ($existing, $companyId, $data, $opening, $actor): void {
-                $company = Company::findOrFail($companyId);
+            DB::transaction(function () use ($existing, $company, $data, $opening, $actor): void {
                 $account = $existing ?? $company->accounts()->make(['code' => app(LedgerService::class)->nextCode($company, LedgerService::PAYMENT_METHOD)]);
                 // Type and is_cash never change here, so a payment method that is already used stays one.
                 $account->fill(['name' => $data['name'], 'type' => AccountType::Asset, 'is_cash' => true, 'payment_type' => PaymentType::from($data['paymentType']),
@@ -117,7 +121,6 @@ class Form extends Component
 
             return null;
         }
-        session(['ledger.company_id' => $companyId]);
         session()->flash('success', __('Payment method saved.'));
 
         return redirect()->route('admin.payment-methods.index');
@@ -126,20 +129,20 @@ class Form extends Component
     public function render(): View
     {
         $existing = $this->paymentMethodId ? Account::findOrFail($this->paymentMethodId) : null;
-        $companies = $existing ? Company::visibleTo(auth()->user()) : $this->activeCompanies();
 
         return view('livewire.admin.payment-methods.form', [
             'openingEntry' => $existing ? $this->openingEntry($existing) : null,
-            'companies' => ['' => __('Select a company')] + $companies->orderBy('name')->get(['id', 'name', 'code'])
-                ->mapWithKeys(fn (Company $company): array => [$company->id => $company->name.' ('.$company->code.')'])->all(),
+            'companyName' => Company::visibleTo(auth()->user())->whereKey($this->companyId)->value('name'),
             'paymentTypes' => collect(PaymentType::cases())->mapWithKeys(fn (PaymentType $type): array => [$type->value => $type->label()])->all(),
         ])->layout('layouts.admin');
     }
 
-    /** New payment methods can only be added to active companies the user can access. */
-    private function activeCompanies(): Builder
+    /** The header company, while it is still the one this page was opened for, visible and active. */
+    private function contextCompany(): ?Company
     {
-        return Company::visibleTo(auth()->user())->where('is_active', true);
+        $company = app(CompanyContext::class)->company();
+
+        return $company?->is_active && $company->id === $this->companyId ? $company : null;
     }
 
     /** The posted opening entry of the payment method, if one was recorded. */

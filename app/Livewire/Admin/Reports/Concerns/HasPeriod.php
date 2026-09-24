@@ -83,6 +83,12 @@ trait HasPeriod
         return [$this->from, $this->to];
     }
 
+    /** @return array<string, string> the period as query parameters, e.g. for a link back to the same view */
+    protected function periodQuery(): array
+    {
+        return $this->period === 'custom' ? ['period' => 'custom', 'from' => $this->from, 'to' => $this->to] : ['period' => $this->period];
+    }
+
     /** @param array{0: string, 1: string}|null $range */
     protected function periodLabel(?array $range): string
     {

@@ -22,21 +22,20 @@
     @endif
     <div class="panel stack">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companies" />
             <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />
             <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />
             <x-form.select name="type" :label="__('Type')" wire:model.live="type" :options="$types" />
-            <x-form.select name="account" :label="__('Account')" wire:model.live="account" :options="$accounts" :disabled="! $companySelected" :help="$companySelected ? null : __('Select a company first.')" />
-            <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$parties" :disabled="! $companySelected" />
+            <x-form.select name="account" :label="__('Account')" wire:model.live="account" :options="$accounts" />
+            <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$parties" />
             <x-form.select name="status" :label="__('Due status')" wire:model.live="status" :options="$statuses" />
             <x-form.input name="search" :label="__('Search')" type="search" wire:model.live.debounce.300ms="search" maxlength="100" :help="__('Number, description or reference.')" />
             <div class="flex items-center gap-3"><button class="btn btn-secondary" type="button" wire:click="clearFilters">{{ __('Clear filters') }}</button><a class="btn btn-secondary" href="{{ route('admin.entries.export', $this->filters()) }}">{{ __('Export CSV') }}</a></div>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>{{ __('Number') }}</th><th>{{ __('Date') }}</th><th>{{ __('Type') }}</th><th>{{ __('Party') }}</th><th>{{ __('Details') }}</th><th class="text-right">{{ __('Total') }}</th><th class="text-right">{{ __('Paid') }}</th><th class="text-right">{{ __('Due') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>
+        <div class="table-wrap"><table><thead><tr><th>{{ __('Number') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Date') }}</th><th>{{ __('Type') }}</th><th>{{ __('Party') }}</th><th>{{ __('Details') }}</th><th class="text-right">{{ __('Total') }}</th><th class="text-right">{{ __('Paid') }}</th><th class="text-right">{{ __('Due') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>
             @forelse($entries as $entry)
                 @php($status = $entry->dueStatus())
                 <tr wire:key="entry-{{ $entry->id }}" @class(['opacity-60' => $entry->isVoided()])>
-                    <td><strong>{{ $entry->number }}</strong><p class="muted">{{ $entry->company->name }}</p></td>
+                    <td><strong>{{ $entry->number }}</strong></td>@if($showCompany)<td>{{ $entry->company->name }}</td>@endif
                     <td class="whitespace-nowrap">{{ $entry->entry_date->format('d M Y') }}</td>
                     <td>{{ $entry->type->label() }}</td>
                     <td>{{ $entry->party?->name ?? '—' }}</td>
@@ -52,7 +51,7 @@
                         @can('entries.void')<button class="text-link ml-3" type="button" wire:click="confirmVoid({{ $entry->id }})" aria-label="{{ __('Void :number', ['number' => $entry->number]) }}">{{ __('Void') }}</button>@endcan
                     @endunless</td>
                 </tr>
-            @empty<tr><td colspan="10"><p class="muted">{{ __('No entries found.') }}</p></td></tr>@endforelse
+            @empty<tr><td colspan="{{ $showCompany ? 11 : 10 }}"><p class="muted">{{ __('No entries found.') }}</p></td></tr>@endforelse
         </tbody></table></div>{{ $entries->links() }}
     </div>
 </div>

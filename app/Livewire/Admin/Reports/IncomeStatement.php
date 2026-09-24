@@ -6,34 +6,27 @@ use App\Enums\AccountType;
 use App\Livewire\Admin\Reports\Concerns\HasPeriod;
 use App\Models\Company;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
-use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Income and expense categories for one company or all visible companies combined, on an accrual basis: a bill's
- * category line counts in full on its entry date, paid or not. Receipts and payments only move money between
- * payment methods and receivables/payables, so they never appear here. Accounts are grouped by name across
- * companies, one column per company. Only accounts with posted activity in the period appear.
+ * Income and expense categories for the header company context: one company in a single column, or all visible
+ * companies side by side with a Total column. Accrual basis: a bill's category line counts in full on its entry
+ * date, paid or not. Receipts and payments only move money between payment methods and receivables/payables, so
+ * they never appear here. Accounts are grouped by name across companies; only accounts with activity appear.
  */
 class IncomeStatement extends Component
 {
     use HasPeriod;
 
-    /** A visible company id, or '' for all visible companies (consolidated). */
-    #[Url(except: '')]
-    public string $company = '';
-
     public function render(): View
     {
         Gate::authorize('reports.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code', 'is_active']);
-        if (! $companies->contains('id', (int) $this->company)) {
-            $this->company = '';
-        }
-        $consolidated = $this->company === '';
-        $selected = $consolidated ? $companies : $companies->where('id', (int) $this->company)->values();
+        $context = app(CompanyContext::class);
+        $consolidated = $context->isAll();
+        $selected = $context->options()->whereIn('id', $context->companyIds())->values();
         $range = $this->resolvePeriod();
 
         $activity = $range === null || $selected->isEmpty() ? collect()
@@ -57,10 +50,9 @@ class IncomeStatement extends Component
         }
 
         return view('livewire.admin.reports.income-statement', [
-            'companyOptions' => ['' => __('All my companies')] + $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
-            'scopeLabel' => $consolidated ? __('All my companies') : ($selected->first()?->name ?? ''),
+            'scopeLabel' => $consolidated ? __('All companies') : $context->company()->name,
             'consolidated' => $consolidated,
             'columns' => $columns,
             'income' => $sections[AccountType::Income->value],

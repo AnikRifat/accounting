@@ -1,9 +1,9 @@
 <div>
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ $employeeId ? __('Edit employee') : __('Add employee') }}</h1><p class="muted">{{ __('Employees are staff records. Link them to salary and other expenses.') }}</p></div></div>
+    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ $employeeId ? __('Edit employee') : __('Add employee') }}</h1><p class="muted">{{ __('Company: :name', ['name' => $companyName]) }}</p><p class="muted">{{ __('Employees are staff records. Link them to salary and other expenses.') }}</p></div></div>
+    @error('company')<p class="error mb-4" role="alert">{{ $message }}</p>@enderror
     <form wire:submit="save" class="stack">
         <div class="panel"><h2>{{ __('Employee details') }}</h2><div class="form-grid">
-            <x-form.select name="companyId" :label="__('Company')" wire:model="companyId" :options="$companyOptions" required :disabled="$employeeId !== null" :help="$employeeId ? __('An employee cannot move to another company.') : null" />
             <x-form.input name="employeeCode" :label="__('Employee code')" wire:model="employeeCode" required maxlength="30" :help="__('Unique within the company.')" />
             <x-form.input name="name" :label="__('Full name')" wire:model="name" required maxlength="255" />
             <x-form.input name="designation" :label="__('Designation')" wire:model="designation" maxlength="255" />

@@ -8,7 +8,6 @@ use App\Enums\PaymentType;
 use App\Livewire\Admin\Categories\Form as CategoryForm;
 use App\Livewire\Admin\Categories\Index as CategoryIndex;
 use App\Livewire\Admin\PaymentMethods\Form as PaymentMethodForm;
-use App\Livewire\Admin\PaymentMethods\Index as PaymentMethodIndex;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
@@ -17,7 +16,10 @@ use App\Models\Party;
 use App\Models\RolePermission;
 use App\Models\User;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -49,14 +51,64 @@ class CategoriesAndPaymentMethodsTest extends TestCase
         $this->get('/admin/categories')->assertOk()->assertSeeInOrder([__('Income categories'), 'Consulting Fees', __('Expense categories'), 'Internet Bill']);
     }
 
-    public function test_category_names_are_unique_per_company(): void
+    public function test_category_names_are_unique_within_the_header_company(): void
     {
         [$first, $second] = Company::factory()->count(2)->create();
         $this->actingAs($this->userFor('accountant', $first, $second));
-        Livewire::test(CategoryForm::class)->set('companyId', (string) $first->id)->set('name', 'Office Rent')->call('save')->assertHasErrors(['name' => 'unique']);
-        Livewire::test(CategoryForm::class)->set('companyId', (string) $second->id)->set('name', 'Brand New')->call('save')->assertHasNoErrors();
-        Livewire::test(CategoryForm::class)->set('companyId', (string) $first->id)->set('name', 'Brand New')->call('save')->assertHasNoErrors();
-        $this->assertSame(2, Account::where('name', 'Brand New')->count());
+        session([CompanyContext::SESSION_KEY => $first->id]);
+        Livewire::test(CategoryForm::class)->set('name', 'Office Rent')->call('save')->assertHasErrors(['name' => 'unique']);
+        Livewire::test(CategoryForm::class)->set('name', 'Brand New')->call('save')->assertHasNoErrors();
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        Livewire::test(CategoryForm::class)->set('name', 'Brand New')->call('save')->assertHasNoErrors();
+        $this->assertEqualsCanonicalizing([$first->id, $second->id], Account::where('name', 'Brand New')->pluck('company_id')->all());
+    }
+
+    public function test_on_all_companies_a_new_category_is_added_to_every_active_company_that_lacks_it(): void
+    {
+        [$first, $second, $third] = Company::factory()->count(3)->sequence(['name' => 'Alpha Ltd'], ['name' => 'Beta Ltd'], ['name' => 'Gamma Ltd'])->create();
+        $inactive = Company::factory()->create(['is_active' => false]);
+        $hidden = Company::factory()->create();
+        $second->accounts()->create(['code' => '4500', 'name' => 'Consulting', 'type' => AccountType::Income]);
+        $this->actingAs($this->userFor('accountant', $first, $second, $third, $inactive));
+
+        Livewire::test(CategoryForm::class)->assertSet('companyId', null)->set('name', 'Consulting')->set('type', 'income')->call('save')
+            ->assertHasNoErrors()->assertRedirect(route('admin.categories.index'));
+        $this->assertStringContainsString('Beta Ltd', session('success'));
+        $this->assertEqualsCanonicalizing([$first->id, $second->id, $third->id], Account::where('name', 'Consulting')->pluck('company_id')->all());
+        foreach ([$first, $third] as $company) {
+            $code = (int) $company->accounts()->where('name', 'Consulting')->value('code');
+            $this->assertTrue($code >= 4000 && $code <= 4999);
+        }
+        $this->assertFalse($inactive->accounts()->where('name', 'Consulting')->exists());
+        $this->assertFalse($hidden->accounts()->where('name', 'Consulting')->exists());
+
+        Livewire::test(CategoryForm::class)->set('name', 'Consulting')->set('type', 'income')->call('save')->assertHasErrors('name');
+    }
+
+    public function test_all_companies_view_combines_categories_by_name_and_edit_switches_the_company(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->sequence(['name' => 'Alpha Ltd'], ['name' => 'Beta Ltd'])->create();
+        $hidden = Company::factory()->create(['name' => 'Hidden Ltd']);
+        $second->accounts()->where('name', 'Utilities')->update(['is_active' => false]);
+        $this->actingAs($this->userFor('accountant', $first, $second));
+
+        $html = $this->get('/admin/categories')->assertOk()->assertSeeInOrder(['Utilities', 'Alpha Ltd', __('Active'), 'Beta Ltd', __('Inactive')])->getContent();
+        $this->assertSame(1, substr_count($html, '<strong>Office Rent</strong>'));
+        $this->assertStringNotContainsString('Hidden Ltd', $html);
+
+        $rent = $second->accounts()->where('name', 'Office Rent')->sole();
+        Livewire::test(CategoryIndex::class)->call('editIn', $rent->id)->assertRedirect(route('admin.categories.edit', $rent));
+        $this->assertSame($second->id, app(CompanyContext::class)->selectedId());
+        $this->get('/admin/categories')->assertOk()->assertSee('<strong>Office Rent</strong>', false)->assertDontSee('<th>'.__('Companies').'</th>', false);
+
+        foreach ([$hidden->accounts()->where('name', 'Office Rent')->sole(), $first->accounts()->where('name', 'Cash in Hand')->sole()] as $account) {
+            try {
+                Livewire::test(CategoryIndex::class)->call('editIn', $account->id);
+                $this->fail('editIn must refuse accounts that are not visible categories.');
+            } catch (ModelNotFoundException) {
+            }
+        }
+        $this->assertSame($second->id, app(CompanyContext::class)->selectedId());
     }
 
     public function test_category_type_is_locked_once_it_has_entries(): void
@@ -79,20 +131,30 @@ class CategoriesAndPaymentMethodsTest extends TestCase
 
     public function test_category_screen_rejects_hidden_companies_and_non_category_accounts(): void
     {
-        [$assigned, $hidden] = Company::factory()->count(2)->create();
-        $this->actingAs($this->userFor('accountant', $assigned));
-        $existingName = $hidden->accounts()->where('name', 'Office Rent')->sole()->name;
+        [$assigned, $other] = Company::factory()->count(2)->create();
+        $hidden = Company::factory()->create();
+        $this->actingAs($this->userFor('accountant', $assigned, $other));
 
-        $hit = Livewire::test(CategoryForm::class)->set('companyId', (string) $hidden->id)->set('name', $existingName)->call('save');
-        $miss = Livewire::test(CategoryForm::class)->set('companyId', (string) $hidden->id)->set('name', 'Nobody Uses This')->call('save');
-        $this->assertSame(['companyId'], array_keys($hit->errors()->toArray()));
-        $this->assertSame($miss->errors()->toArray(), $hit->errors()->toArray());
+        // A crafted session value for an invisible company falls back to All-visible.
+        session([CompanyContext::SESSION_KEY => $hidden->id]);
+        Livewire::test(CategoryForm::class)->assertSet('companyId', null)->set('name', 'Fresh Category')->call('save')->assertHasNoErrors();
+        $this->assertEqualsCanonicalizing([$assigned->id, $other->id], Account::where('name', 'Fresh Category')->pluck('company_id')->all());
+
+        session([CompanyContext::SESSION_KEY => $assigned->id]);
+        $component = Livewire::test(CategoryForm::class);
+        try {
+            $component->set('companyId', $hidden->id);
+            $this->fail('The company of the form must not be settable from the client.');
+        } catch (CannotUpdateLockedPropertyException) {
+        }
+        session([CompanyContext::SESSION_KEY => $other->id]);
+        $component->set('name', 'Too Late')->call('save')->assertHasErrors('company');
+        $this->assertDatabaseMissing('accounts', ['name' => 'Too Late']);
 
         $this->get('/admin/categories/'.$hidden->accounts()->where('name', 'Office Rent')->sole()->id.'/edit')->assertNotFound();
         foreach (['Cash in Hand', 'Opening Balance Equity'] as $name) {
             $this->get('/admin/categories/'.$assigned->accounts()->where('name', $name)->sole()->id.'/edit')->assertNotFound();
         }
-        Livewire::test(CategoryIndex::class)->set('companyId', (string) $hidden->id)->assertSet('companyId', (string) $assigned->id);
     }
 
     public function test_payment_method_is_created_with_automatic_code_and_opening_balance(): void
@@ -129,18 +191,51 @@ class CategoriesAndPaymentMethodsTest extends TestCase
 
     public function test_payment_method_names_are_unique_and_screen_is_company_scoped(): void
     {
-        [$assigned, $hidden] = Company::factory()->count(2)->create();
-        $this->actingAs($this->userFor('accountant', $assigned));
-        Livewire::test(PaymentMethodForm::class)->set('name', 'Cash in Hand')->call('save')->assertHasErrors(['name' => 'unique']);
+        [$assigned, $other, $third] = Company::factory()->count(3)->create();
+        $hidden = Company::factory()->create();
+        $this->actingAs($this->userFor('accountant', $assigned, $other, $third));
+        $choose = route('admin.choose-company', ['next' => '/admin/payment-methods/create']);
 
-        $hit = Livewire::test(PaymentMethodForm::class)->set('companyId', (string) $hidden->id)->set('name', 'Cash in Hand')->call('save');
-        $miss = Livewire::test(PaymentMethodForm::class)->set('companyId', (string) $hidden->id)->set('name', 'Nobody Uses This')->call('save');
-        $this->assertSame(['companyId'], array_keys($hit->errors()->toArray()));
-        $this->assertSame($miss->errors()->toArray(), $hit->errors()->toArray());
+        $this->get('/admin/payment-methods/create')->assertRedirect($choose);
+        session([CompanyContext::SESSION_KEY => $hidden->id]);
+        $this->get('/admin/payment-methods/create')->assertRedirect($choose);
+        $other->update(['is_active' => false]);
+        session([CompanyContext::SESSION_KEY => $other->id]);
+        $this->get('/admin/payment-methods/create')->assertRedirect($choose);
+
+        session([CompanyContext::SESSION_KEY => $assigned->id]);
+        $this->get('/admin/payment-methods/create')->assertOk();
+        Livewire::test(PaymentMethodForm::class)->set('name', 'Cash in Hand')->call('save')->assertHasErrors(['name' => 'unique']);
+        $component = Livewire::test(PaymentMethodForm::class)->assertSet('companyId', $assigned->id);
+        try {
+            $component->set('companyId', $hidden->id);
+            $this->fail('The company of the form must not be settable from the client.');
+        } catch (CannotUpdateLockedPropertyException) {
+        }
+        session([CompanyContext::SESSION_KEY => $third->id]);
+        $component->set('name', 'Too Late')->call('save')->assertHasErrors('company');
+        $this->assertDatabaseMissing('accounts', ['name' => 'Too Late']);
 
         $this->get('/admin/payment-methods/'.$hidden->accounts()->where('name', 'Cash in Hand')->sole()->id.'/edit')->assertNotFound();
         $this->get('/admin/payment-methods/'.$assigned->accounts()->where('name', 'Office Rent')->sole()->id.'/edit')->assertNotFound();
-        Livewire::test(PaymentMethodIndex::class)->set('companyId', (string) $hidden->id)->assertSet('companyId', (string) $assigned->id);
+    }
+
+    public function test_all_companies_view_groups_payment_methods_by_company_with_totals(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->sequence(['name' => 'Alpha Ltd'], ['name' => 'Beta Ltd'])->create();
+        $actor = $this->userFor('accountant', $first, $second);
+        $this->actingAs($actor);
+        $ledger = app(LedgerService::class);
+        $ledger->recordOpening($first->accounts()->where('name', 'Cash in Hand')->sole(), 100_000, '2026-07-01', $actor);
+        $ledger->recordOpening($second->accounts()->where('name', 'bKash')->sole(), 25_050, '2026-07-01', $actor);
+
+        $this->get('/admin/payment-methods')->assertOk()->assertSeeInOrder([
+            'Alpha Ltd', 'Cash in Hand', '৳1,000.00', __('Total for :company', ['company' => 'Alpha Ltd']), '৳1,000.00',
+            'Beta Ltd', 'bKash', '৳250.50', __('Total for :company', ['company' => 'Beta Ltd']), '৳250.50',
+            __('Grand total: :amount', ['amount' => '৳1,250.50']),
+        ]);
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        $this->get('/admin/payment-methods')->assertOk()->assertSee('৳250.50')->assertDontSee('৳1,000.00')->assertDontSee('Grand total');
     }
 
     public function test_viewing_needs_accounts_view_and_managing_needs_accounts_manage(): void
@@ -156,6 +251,7 @@ class CategoriesAndPaymentMethodsTest extends TestCase
         foreach (['/admin/categories/create', '/admin/categories/'.$category->id.'/edit', '/admin/payment-methods/create', '/admin/payment-methods/'.$cash->id.'/edit'] as $path) {
             $this->get($path)->assertForbidden();
         }
+        Livewire::test(CategoryIndex::class)->call('editIn', $category->id)->assertForbidden();
     }
 
     public function test_owned_pages_render_for_owner_and_accountant(): void

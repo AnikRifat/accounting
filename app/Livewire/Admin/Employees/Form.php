@@ -4,6 +4,7 @@ namespace App\Livewire\Admin\Employees;
 
 use App\Models\Company;
 use App\Models\Employee;
+use App\Support\CompanyContext;
 use App\Support\Money;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -20,7 +21,9 @@ class Form extends Component
     #[Locked]
     public ?int $employeeId = null;
 
-    public string $companyId = '';
+    /** The employee's company, or the header company when creating. */
+    #[Locked]
+    public ?int $companyId = null;
 
     public string $employeeCode = '';
 
@@ -45,7 +48,7 @@ class Form extends Component
         $actor = auth()->user();
         if ($this->employeeId) {
             abort_unless($actor->canAccessCompany($employee->company_id), 404);
-            $this->companyId = (string) $employee->company_id;
+            $this->companyId = $employee->company_id;
             $this->employeeCode = $employee->employee_code;
             $this->name = $employee->name;
             $this->designation = $employee->designation ?? '';
@@ -54,32 +57,29 @@ class Form extends Component
             $this->monthlySalary = Money::toInput($employee->monthly_salary);
             $this->joinedOn = $employee->joined_on?->toDateString() ?? '';
             $this->isActive = $employee->is_active;
-        } elseif (count($visible = $actor->accessibleCompanyIds()) === 1) {
-            $this->companyId = (string) $visible[0];
+        } else {
+            $this->companyId = app(CompanyContext::class)->company()?->id;
         }
     }
 
-    public function save(): Redirector|RedirectResponse
+    public function save(): Redirector|RedirectResponse|null
     {
         Gate::authorize($this->employeeId ? 'employees.update' : 'employees.create');
         $actor = auth()->user();
         $existing = $this->employeeId ? Employee::visibleTo($actor)->findOrFail($this->employeeId) : null;
-        // An employee stays in the company whose entries may already reference them.
-        if ($existing) {
-            $this->companyId = (string) $existing->company_id;
+        // An employee stays in their company; a new one goes to the header company the page was opened for.
+        $context = app(CompanyContext::class)->company();
+        $company = $existing?->company ?? ($context?->is_active && $context->id === $this->companyId ? $context : null);
+        if (! $company) {
+            $this->addError('company', __('The company in the header has changed or is inactive. Reload the page and try again.'));
+
+            return null;
         }
         foreach (['employeeCode', 'name', 'designation', 'department', 'phone', 'monthlySalary', 'joinedOn'] as $field) {
             $this->{$field} = trim($this->{$field});
         }
-        // Uniqueness is only checked inside an accessible company, so a forged company id cannot probe other companies' codes.
-        $accessibleCompanyId = $actor->canAccessCompany((int) $this->companyId) ? (int) $this->companyId : 0;
         $data = $this->validate([
-            'companyId' => ['bail', 'required', 'integer', function (string $attribute, mixed $value, Closure $fail) use ($actor): void {
-                if (! $actor->canAccessCompany((int) $value)) {
-                    $fail(__('Choose a company you have access to.'));
-                }
-            }],
-            'employeeCode' => ['required', 'string', 'max:30', Rule::unique('employees', 'employee_code')->where('company_id', $accessibleCompanyId)->ignore($this->employeeId)],
+            'employeeCode' => ['required', 'string', 'max:30', Rule::unique('employees', 'employee_code')->where('company_id', $company->id)->ignore($this->employeeId)],
             'name' => ['required', 'string', 'max:150'],
             'designation' => ['nullable', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
@@ -92,10 +92,10 @@ class Form extends Component
             'joinedOn' => ['nullable', 'date_format:Y-m-d'],
             'isActive' => ['boolean'],
         ], [], [
-            'companyId' => __('company'), 'employeeCode' => __('employee code'), 'monthlySalary' => __('monthly salary'), 'joinedOn' => __('joining date'),
+            'employeeCode' => __('employee code'), 'monthlySalary' => __('monthly salary'), 'joinedOn' => __('joining date'),
         ]);
         $attributes = [
-            'company_id' => (int) $data['companyId'], 'employee_code' => $data['employeeCode'], 'name' => $data['name'],
+            'company_id' => $company->id, 'employee_code' => $data['employeeCode'], 'name' => $data['name'],
             'designation' => $data['designation'] ?: null, 'department' => $data['department'] ?: null, 'phone' => $data['phone'] ?: null,
             'monthly_salary' => Money::toPaisa($data['monthlySalary']), 'joined_on' => $data['joinedOn'] ?: null, 'is_active' => $data['isActive'],
         ];
@@ -109,7 +109,7 @@ class Form extends Component
     public function render(): View
     {
         return view('livewire.admin.employees.form', [
-            'companyOptions' => ['' => __('Select a company')] + Company::visibleTo(auth()->user())->orderBy('name')->pluck('name', 'id')->all(),
+            'companyName' => Company::visibleTo(auth()->user())->whereKey($this->companyId)->value('name'),
         ])->layout('layouts.admin');
     }
 }

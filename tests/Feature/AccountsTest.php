@@ -11,7 +11,10 @@ use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\User;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -27,6 +30,11 @@ class AccountsTest extends TestCase
         return $user;
     }
 
+    private function context(?Company $company): void
+    {
+        session([CompanyContext::SESSION_KEY => $company?->id]);
+    }
+
     public function test_index_lists_accounts_of_a_visible_company_with_balances(): void
     {
         [$mine, $other] = Company::factory()->count(2)->create();
@@ -36,8 +44,35 @@ class AccountsTest extends TestCase
         $this->actingAs($user);
 
         $this->get(route('admin.accounts.index'))->assertOk()->assertSee('Cash in Hand')->assertSee('৳1,25,000.50')->assertDontSee('Hidden Expenses');
-        Livewire::test(Index::class)->set('companyId', (string) $other->id)
-            ->assertSet('companyId', (string) $mine->id)->assertDontSee('Hidden Expenses');
+    }
+
+    public function test_all_mode_combines_accounts_by_name_and_edit_switches_to_the_account_company(): void
+    {
+        [$alpha, $beta, $hidden] = Company::factory()->count(3)->sequence(['name' => 'Alpha Ltd'], ['name' => 'Beta Ltd'], ['name' => 'Hidden Ltd'])->create();
+        $user = $this->accountant($alpha, $beta);
+        $ledger = app(LedgerService::class);
+        $ledger->recordOpening($alpha->accounts()->where('code', '1000')->sole(), 1_000_00, '2026-09-01', $user);
+        $ledger->recordOpening($beta->accounts()->where('code', '1000')->sole(), 250_50, '2026-09-01', User::factory()->create(['role' => 'owner']));
+        $ledger->recordOpening($hidden->accounts()->where('code', '1000')->sole(), 99_000_00, '2026-09-01', User::factory()->create(['role' => 'owner']));
+        $this->actingAs($user);
+        $this->context($hidden);
+
+        $component = Livewire::test(Index::class)->assertViewHas('all', true)->assertSee('Alpha Ltd')->assertSee('Beta Ltd')->assertDontSee('Hidden Ltd');
+        $cash = $component->viewData('groups')['asset']->firstWhere('name', 'Cash in Hand');
+        $this->assertSame(1_250_50, $cash['balance']);
+        $this->assertSame([$alpha->id, $beta->id], $cash['accounts']->pluck('company_id')->all());
+        $this->assertCount(1, $component->viewData('groups')['asset']->where('name', 'Cash in Hand'));
+
+        $betaRent = $beta->accounts()->where('code', '5100')->sole();
+        $component->call('edit', $betaRent->id)->assertRedirect(route('admin.accounts.edit', $betaRent));
+        $this->assertSame($beta->id, app(CompanyContext::class)->selectedId());
+        try {
+            Livewire::test(Index::class)->call('edit', $hidden->accounts()->where('code', '5100')->sole()->id);
+            $this->fail('An account of an invisible company was opened.');
+        } catch (ModelNotFoundException) {
+            $this->assertSame($beta->id, app(CompanyContext::class)->selectedId());
+        }
+        Livewire::test(Index::class)->assertViewHas('all', false)->assertDontSee('Alpha Ltd')->assertSee('৳250.50');
     }
 
     public function test_cash_account_can_be_created_with_an_opening_balance(): void
@@ -46,7 +81,7 @@ class AccountsTest extends TestCase
         $user = $this->accountant($company);
         $this->actingAs($user);
 
-        Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('code', '1030')->set('name', 'Nagad Wallet')
+        Livewire::test(Form::class)->set('code', '1030')->set('name', 'Nagad Wallet')
             ->set('type', 'asset')->set('isCash', true)->set('paymentType', 'mobile_banking')->set('details', '01711-000000')->set('openingBalance', '15,000')->set('openingDate', '2026-07-01')
             ->call('save')->assertHasNoErrors()->assertRedirect(route('admin.accounts.index'));
 
@@ -63,12 +98,15 @@ class AccountsTest extends TestCase
         [$company, $other] = Company::factory()->count(2)->create();
         $this->actingAs(User::factory()->create(['role' => 'owner']));
 
-        Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('code', '1000')->set('name', 'Cash in Hand')
+        $this->context($company);
+        Livewire::test(Form::class)->set('code', '1000')->set('name', 'Cash in Hand')
             ->call('save')->assertHasErrors(['code', 'name']);
-        Livewire::test(Form::class)->set('companyId', (string) $other->id)->set('code', '6000')->set('name', 'Marketing')
+        $this->context($other);
+        Livewire::test(Form::class)->set('code', '6000')->set('name', 'Marketing')
             ->set('type', 'expense')->set('isCash', true)->call('save')->assertHasNoErrors();
         $this->assertFalse($other->accounts()->where('code', '6000')->sole()->is_cash);
-        Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('code', '6000')->set('name', 'Marketing')
+        $this->context($company);
+        Livewire::test(Form::class)->set('code', '6000')->set('name', 'Marketing')
             ->set('type', 'expense')->set('openingBalance', '100')->call('save')->assertHasErrors('openingBalance');
     }
 
@@ -79,9 +117,12 @@ class AccountsTest extends TestCase
 
         $this->get(route('admin.accounts.edit', $other->accounts()->where('code', '5100')->sole()))->assertNotFound();
         $this->get(route('admin.accounts.edit', $mine->accounts()->where('code', '3000')->sole()))->assertForbidden();
-        Livewire::test(Form::class)->set('companyId', (string) $other->id)->set('code', '6000')->set('name', 'Injected')
-            ->call('save')->assertHasErrors('companyId');
-        $this->assertDatabaseMissing('accounts', ['name' => 'Injected']);
+        try {
+            Livewire::test(Form::class)->set('companyId', $other->id);
+            $this->fail('A crafted company id was accepted.');
+        } catch (CannotUpdateLockedPropertyException) {
+            $this->assertDatabaseMissing('accounts', ['company_id' => $other->id, 'code' => '6000']);
+        }
     }
 
     public function test_type_of_an_account_with_entries_cannot_change(): void
@@ -128,25 +169,31 @@ class AccountsTest extends TestCase
         $company = Company::factory()->create();
         $this->actingAs($this->accountant($company));
 
-        Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('code', ' 5100 ')->set('name', ' Office Rent ')
+        Livewire::test(Form::class)->set('code', ' 5100 ')->set('name', ' Office Rent ')
             ->call('save')->assertHasErrors(['code', 'name']);
-        Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('code', ' 6100 ')->set('name', ' Marketing ')
+        Livewire::test(Form::class)->set('code', ' 6100 ')->set('name', ' Marketing ')
             ->call('save')->assertHasNoErrors();
         $this->assertTrue($company->accounts()->where('code', '6100')->where('name', 'Marketing')->exists());
     }
 
-    public function test_a_forged_company_does_not_reveal_whether_its_accounts_exist(): void
+    public function test_a_header_change_in_another_tab_fails_cleanly_before_any_unique_check(): void
     {
-        [$mine, $other] = Company::factory()->count(2)->create();
-        $this->actingAs($this->accountant($mine));
-        $attempt = fn (string $code, string $name) => Livewire::test(Form::class)->set('companyId', (string) $other->id)
-            ->set('code', $code)->set('name', $name)->call('save')->errors()->toArray();
+        [$first, $second] = Company::factory()->count(2)->create();
+        $this->actingAs($this->accountant($first, $second));
+        $attempt = function (string $code, string $name) use ($first, $second): array {
+            $this->context($first);
+            $form = Livewire::test(Form::class)->assertSet('companyId', $first->id);
+            $this->context($second);
+
+            return $form->set('code', $code)->set('name', $name)->call('save')->errors()->toArray();
+        };
 
         $hit = $attempt('5900', 'Other Expenses');
         $miss = $attempt('7777', 'Nothing Like This');
 
         $this->assertSame($miss, $hit);
         $this->assertSame(['companyId'], array_keys($hit));
+        $this->assertFalse(Account::where('code', '7777')->exists());
     }
 
     public function test_accounts_cannot_be_added_to_an_inactive_company(): void
@@ -154,10 +201,18 @@ class AccountsTest extends TestCase
         $active = Company::factory()->create(['name' => 'Active Traders']);
         $inactive = Company::factory()->create(['name' => 'Closed Traders', 'is_active' => false]);
         $this->actingAs($this->accountant($active, $inactive));
+        $chooser = fn (): string => route('admin.choose-company', ['next' => '/admin/accounts/create']);
 
-        Livewire::test(Form::class)->assertSet('companyId', (string) $active->id)->assertSee('Active Traders')->assertDontSee('Closed Traders')
-            ->set('companyId', (string) $inactive->id)->set('code', '6000')->set('name', 'Marketing')->call('save')->assertHasErrors('companyId');
-        $this->assertFalse($inactive->accounts()->where('code', '6000')->exists());
+        $this->get(route('admin.accounts.create'))->assertRedirect($chooser());
+        $this->context($inactive);
+        $this->get(route('admin.accounts.create'))->assertRedirect($chooser());
+        $this->context($active);
+        $this->get(route('admin.accounts.create'))->assertOk()->assertSee('Active Traders');
+        $form = Livewire::test(Form::class)->assertSet('companyId', $active->id);
+        $active->update(['is_active' => false]);
+        $form->set('code', '6000')->set('name', 'Marketing')->call('save')->assertHasErrors('companyId');
+        $this->assertFalse(Account::where('code', '6000')->exists());
+        $this->context(null);
         $this->get(route('admin.accounts.index'))->assertOk()->assertSee('Closed Traders');
     }
 

@@ -3,8 +3,7 @@
         <button class="btn btn-secondary no-print" type="button" onclick="window.print()">{{ __('Print') }}</button>
     </div>
     <div class="panel no-print mb-6">
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companyOptions" />
+        <div class="grid gap-4 sm:grid-cols-3">
             <x-form.select name="kind" :label="__('Show')" wire:model.live="kind" :options="$kindOptions" />
             <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$partyOptions" />
             <div class="flex items-end pb-8"><x-form.checkbox name="overdue" :label="__('Overdue only')" wire:model.live="overdue" /></div>
@@ -13,6 +12,12 @@
     @if($companyTotals->isEmpty())
         <div class="panel"><p class="muted">{{ $overdue ? __('Nothing is overdue.') : __('Nothing is outstanding.') }}</p></div>
     @else
+        @if(! $consolidated)
+            <div class="panel mb-6 due-stats">
+                <div><p class="muted">{{ __('Receivable (owed to us)') }}</p><p class="stat-value text-2xl tabular-nums">{{ \App\Support\Money::format($companyTotals->sum('receivable')) }}</p></div>
+                <div><p class="muted">{{ __('Payable (we owe)') }}</p><p class="stat-value text-2xl tabular-nums">{{ \App\Support\Money::format($companyTotals->sum('payable')) }}</p></div>
+            </div>
+        @else
         <section class="panel mb-6" aria-labelledby="dues-totals-heading"><h2 id="dues-totals-heading">{{ __('Totals by company') }}</h2>
             <div class="table-wrap"><table class="report-table"><caption class="sr-only">{{ __('Totals by company') }}</caption>
                 <thead><tr><th scope="col">{{ __('Company') }}</th><th scope="col" class="text-right">{{ __('Receivable') }}</th><th scope="col" class="text-right">{{ __('Payable') }}</th></tr></thead>
@@ -20,6 +25,7 @@
                 <tfoot><tr class="grand-total-row"><th scope="row">{{ __('Total') }}</th><td class="text-right tabular-nums">{{ \App\Support\Money::format($companyTotals->sum('receivable')) }}</td><td class="text-right tabular-nums">{{ \App\Support\Money::format($companyTotals->sum('payable')) }}</td></tr></tfoot>
             </table></div>
         </section>
+        @endif
         @foreach(['receivable' => [__('Receivables (owed to us)'), __('Receive payment')], 'payable' => [__('Payables (we owe)'), __('Make payment')]] as $key => [$heading, $actionLabel])
             @if($sections[$key]->isNotEmpty())
                 <section class="panel mb-6" aria-labelledby="dues-{{ $key }}-heading" wire:key="dues-section-{{ $key }}"><h2 id="dues-{{ $key }}-heading">{{ $heading }}</h2>
@@ -28,8 +34,11 @@
                         @foreach($sections[$key] as $group)
                             <tbody wire:key="dues-{{ $key }}-party-{{ $group['party']?->id ?? 0 }}">
                                 <tr class="section-row"><th scope="rowgroup" colspan="9">
-                                    @if($group['party'] && auth()->user()->can('parties.view'))<a class="text-link" href="{{ route('admin.reports.party-statement', ['company' => $group['company']->id, 'party' => $group['party']->id]) }}" wire:navigate>{{ $group['party']->name }}</a>@else{{ $group['party']?->name ?? __('No party') }}@endif
-                                    <span class="muted"> · {{ $group['company']->name }}@if($group['party']?->phone) · {{ $group['party']->phone }}@endif</span>
+                                    @if($group['party'] && auth()->user()->can('parties.view'))
+                                        @if($consolidated)<button class="text-link" type="button" wire:click="openStatement({{ $group['party']->id }})" title="{{ __('Switches the company to :company', ['company' => $group['company']->name]) }}">{{ $group['party']->name }}</button>
+                                        @else<a class="text-link" href="{{ route('admin.reports.party-statement', ['party' => $group['party']->id]) }}" wire:navigate>{{ $group['party']->name }}</a>@endif
+                                    @else{{ $group['party']?->name ?? __('No party') }}@endif
+                                    <span class="muted">@if($consolidated) · {{ $group['company']->name }}@endif @if($group['party']?->phone) · {{ $group['party']->phone }}@endif</span>
                                 </th></tr>
                                 @foreach($group['bills'] as $row)
                                     <tr wire:key="due-{{ $row['entry']->id }}">

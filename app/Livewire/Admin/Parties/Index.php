@@ -2,8 +2,8 @@
 
 namespace App\Livewire\Admin\Parties;
 
-use App\Models\Company;
 use App\Models\Party;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
@@ -15,15 +15,13 @@ class Index extends Component
 
     public string $search = '';
 
-    public string $companyId = '';
-
     public string $kind = '';
 
     public string $status = '';
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['search', 'companyId', 'kind', 'status'], true)) {
+        if (in_array($property, ['search', 'kind', 'status'], true)) {
             $this->resetPage();
         }
     }
@@ -31,14 +29,12 @@ class Index extends Component
     public function render(): View
     {
         Gate::authorize('parties.view');
-        $actor = auth()->user();
+        $context = app(CompanyContext::class);
         $search = mb_substr(trim($this->search), 0, 100);
 
         return view('livewire.admin.parties.index', [
-            'companyOptions' => ['' => __('All companies')] + Company::visibleTo($actor)->orderBy('name')->pluck('name', 'id')->all(),
-            // The visibility scope stays applied, so a forged company filter can only narrow the result.
-            'parties' => Party::visibleTo($actor)->with('company')
-                ->when($this->companyId !== '', fn ($query) => $query->where('company_id', (int) $this->companyId))
+            'showCompany' => $context->isAll(),
+            'parties' => Party::query()->whereIn('company_id', $context->companyIds())->with('company')
                 ->when($this->kind === 'employee', fn ($query) => $query->whereNotNull('employee_id'))
                 ->when($this->kind === 'custom', fn ($query) => $query->whereNull('employee_id'))
                 ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))

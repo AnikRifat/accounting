@@ -3,12 +3,16 @@
         <p class="muted">@if($selectedCompany){{ $selectedCompany->name }}@endif @if($selectedParty) · {{ $selectedParty->name }}@if($selectedParty->phone) ({{ $selectedParty->phone }})@endif @endif @if($periodLabel) · {{ $periodLabel }}@endif</p></div>
         <button class="btn btn-secondary no-print" type="button" onclick="window.print()">{{ __('Print') }}</button>
     </div>
-    @if($companyOptions === [])
+    @if(! $hasCompanies)
         <div class="panel"><p class="muted">{{ __('You are not assigned to any company yet.') }}</p></div>
+    @elseif($selectedCompany === null)
+        <div class="panel stack empty-state"><h2>{{ __('Choose a company') }}</h2>
+            <p class="muted">{{ __('A party statement belongs to one company. Choose a company to see its parties.') }}</p>
+            <div><a class="btn" href="{{ $chooseCompanyUrl }}" wire:navigate>{{ __('Choose a company') }}</a></div>
+        </div>
     @else
         <div class="panel no-print mb-6">
-            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companyOptions" />
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <x-form.select name="party" :label="__('Party')" wire:model.live="party" :options="$partyOptions" />
                 <x-form.select name="period" :label="__('Period')" wire:model.live="period" :options="$periodOptions" />
                 <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />

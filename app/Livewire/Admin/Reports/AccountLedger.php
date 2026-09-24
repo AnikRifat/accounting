@@ -4,17 +4,17 @@ namespace App\Livewire\Admin\Reports;
 
 use App\Livewire\Admin\Reports\Concerns\HasPeriod;
 use App\Models\Account;
-use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-/** Posted lines of one account in a period with opening, running and closing balances. */
+/** Posted lines of one account of the header company in a period, with opening, running and closing balances. Needs one company. */
 class AccountLedger extends Component
 {
     use HasPeriod;
@@ -23,50 +23,27 @@ class AccountLedger extends Component
     public const ROW_LIMIT = 1000;
 
     #[Url(except: '')]
-    public string $company = '';
-
-    #[Url(except: '')]
     public string $account = '';
-
-    public function mount(): void
-    {
-        if ($this->company === '') {
-            $this->company = (string) session('ledger.company_id', '');
-        }
-    }
-
-    public function updatedCompany(): void
-    {
-        $this->account = '';
-    }
 
     public function render(): View
     {
         Gate::authorize('reports.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        $company = $companies->firstWhere('id', (int) $this->company) ?? $companies->first();
-        $this->company = (string) $company?->id;
-        if ($company) {
-            session(['ledger.company_id' => $company->id]);
-        }
+        $context = app(CompanyContext::class);
+        $company = $context->isAll() ? null : $context->company();
         $accounts = $company ? Account::query()->where('company_id', $company->id)->orderBy('code')->get() : collect();
         $account = $accounts->firstWhere('id', (int) $this->account);
         $this->account = (string) $account?->id;
         $range = $this->resolvePeriod();
 
-        $report = null;
-        if ($account && $range) {
-            $report = $this->ledger($account, $range[0], $range[1]);
-        }
-
         return view('livewire.admin.reports.account-ledger', [
-            'companyOptions' => $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
             'accountOptions' => ['' => __('Choose an account')] + $accounts->mapWithKeys(fn (Account $item): array => [$item->id => $item->label().' ('.$item->type->label().')'])->all(),
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
+            'hasCompanies' => $context->options()->isNotEmpty(),
             'selectedCompany' => $company,
             'selectedAccount' => $account,
-            'report' => $report,
+            'chooseCompanyUrl' => route('admin.choose-company', ['next' => route('admin.reports.account-ledger', $this->periodQuery(), false)]),
+            'report' => $account && $range ? $this->ledger($account, $range[0], $range[1]) : null,
         ])->layout('layouts.admin');
     }
 

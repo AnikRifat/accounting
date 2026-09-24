@@ -2,16 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AccountType;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
 use App\Livewire\Admin\Entries\Form;
 use App\Livewire\Admin\Entries\Index;
 use App\Livewire\Admin\Entries\Settle;
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
@@ -28,6 +31,22 @@ class EntriesTest extends TestCase
         $user->companies()->attach(array_map(fn (Company $company): int => $company->id, $companies));
 
         return $user;
+    }
+
+    private function context(?Company $company): void
+    {
+        session([CompanyContext::SESSION_KEY => $company?->id]);
+    }
+
+    /** Asserts that setting a locked Livewire property is refused. */
+    private function assertLocked(callable $attempt): void
+    {
+        try {
+            $attempt();
+            $this->fail('A locked property was changed.');
+        } catch (CannotUpdateLockedPropertyException) {
+            $this->addToAssertionCount(1);
+        }
     }
 
     private function accountId(Company $company, string $code): string
@@ -49,21 +68,60 @@ class EntriesTest extends TestCase
             'party_id' => Party::factory()->for($company)->create()->id]);
     }
 
-    public function test_income_is_recorded_with_defaults_and_the_company_is_remembered(): void
+    public function test_income_is_recorded_in_the_header_company_with_defaults(): void
     {
         [$first, $second] = Company::factory()->count(2)->create();
         $this->actingAs($this->user('data-entry', $first, $second));
+        $this->context($second);
 
-        Livewire::test(Form::class, ['type' => 'income'])->assertSet('companyId', (string) $first->id)
-            ->assertSet('paymentAccountId', $this->accountId($first, '1000'))
-            ->set('companyId', (string) $second->id)->assertSet('paymentAccountId', $this->accountId($second, '1000'))
+        Livewire::test(Form::class, ['type' => 'income'])->assertSet('companyId', $second->id)
+            ->assertSet('paymentAccountId', $this->accountId($second, '1000'))->assertSee($second->name)
             ->set('categoryAccountId', $this->accountId($second, '4000'))->set('amount', '1,25,000.50')->assertSet('paidAmount', '1,25,000.50')
             ->set('reference', 'INV-7')->call('save')->assertHasNoErrors()->assertRedirect(route('admin.entries.index'));
 
         $entry = JournalEntry::sole();
         $this->assertSame([$second->id, EntryType::Income, 1_25_000_50, 'INV-7', null], [$entry->company_id, $entry->type, $entry->amount, $entry->reference, $entry->party_id]);
         $this->assertSame(1_25_000_50, app(LedgerService::class)->balance($second->accounts()->where('code', '1000')->sole()));
-        Livewire::test(Form::class, ['type' => 'expense'])->assertSet('companyId', (string) $second->id);
+        $this->context($first);
+        Livewire::test(Form::class, ['type' => 'expense'])->assertSet('companyId', $first->id);
+    }
+
+    public function test_create_needs_one_active_company_in_the_header(): void
+    {
+        [$active, $other] = Company::factory()->count(2)->create();
+        $inactive = Company::factory()->create(['is_active' => false]);
+        $hidden = Company::factory()->create();
+        $this->actingAs($this->user('accountant', $active, $other, $inactive));
+        $chooser = route('admin.choose-company', ['next' => '/admin/entries/create/expense']);
+
+        $this->get(route('admin.entries.create', 'expense'))->assertRedirect($chooser);
+        $this->context($inactive);
+        $this->get(route('admin.entries.create', 'expense'))->assertRedirect($chooser);
+        $this->context($hidden);
+        $this->assertTrue(app(CompanyContext::class)->isAll());
+        $this->get(route('admin.entries.create', 'expense'))->assertRedirect($chooser);
+        $this->context($active);
+        $this->get(route('admin.entries.create', 'expense'))->assertOk();
+    }
+
+    public function test_a_header_change_in_another_tab_or_a_deactivated_company_fails_the_save_cleanly(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->create();
+        $this->actingAs($this->user('accountant', $first, $second));
+        $this->context($first);
+        $form = fn () => Livewire::test(Form::class, ['type' => 'income'])->set('categoryAccountId', $this->accountId($first, '4000'))->set('amount', '100');
+
+        $switched = $form();
+        $this->context($second);
+        $switched->call('save')->assertHasErrors('entry')->set('addingParty', true)->set('newPartyName', 'Late')->call('addParty')->assertHasErrors('newPartyName');
+        $this->context($first);
+        $this->assertLocked(fn () => $form()->set('companyId', $second->id));
+        $closed = $form();
+        $first->forceFill(['is_active' => false])->save();
+        $closed->call('save')->assertHasErrors('entry');
+
+        $this->assertSame(0, JournalEntry::count());
+        $this->assertFalse(Party::where('name', 'Late')->exists());
     }
 
     public function test_a_partly_paid_expense_needs_a_party_and_due_date_and_posts_a_payable(): void
@@ -76,7 +134,7 @@ class EntriesTest extends TestCase
             ->set('amount', '10000')->set('paidAmount', '4000')->assertViewHas('showDue', true)
             ->set('paymentAccountId', $this->accountId($company, '1020'))
             ->call('save')->assertHasErrors(['partyId', 'dueDate']);
-        $form->set('partySearch', 'karim')->assertSee('Karim Traders')->set('partyId', (string) $party->id)
+        $form->assertSee('Karim Traders')->set('partyId', (string) $party->id)
             ->set('dueDate', '2026-01-01')->set('entryDate', '2026-09-01')->call('save')->assertHasErrors('dueDate')
             ->set('dueDate', '2026-10-01')->call('save')->assertHasNoErrors();
 
@@ -109,6 +167,38 @@ class EntriesTest extends TestCase
         Livewire::test(Form::class, ['type' => 'income'])->assertDontSee('+ Add a new party')->call('addParty')->assertForbidden();
     }
 
+    public function test_quick_add_category_creates_one_of_the_entry_side_and_selects_it(): void
+    {
+        [$company, $other] = Company::factory()->count(2)->create();
+        $this->actingAs($this->user('accountant', $company));
+
+        $form = Livewire::test(Form::class, ['type' => 'expense'])->assertSee('+ Add a new category')
+            ->set('addingCategory', true)->set('newCategoryName', ' Courier ')->call('addCategory')->assertHasNoErrors()
+            ->assertSet('addingCategory', false)->assertSet('newCategoryName', '');
+        $category = Account::query()->where('name', 'Courier')->sole();
+        $this->assertSame([$company->id, AccountType::Expense, false, true], [$category->company_id, $category->type, $category->is_cash, $category->is_active]);
+        $this->assertGreaterThanOrEqual(5000, (int) $category->code);
+        $this->assertLessThanOrEqual(5999, (int) $category->code);
+        $form->assertSet('categoryAccountId', (string) $category->id)->assertSee('Courier')
+            ->set('amount', '250')->call('save')->assertHasNoErrors();
+        $this->assertSame($category->id, JournalEntry::sole()->categoryAccount()->id);
+
+        Livewire::test(Form::class, ['type' => 'income'])->set('newCategoryName', 'Courier')->call('addCategory')->assertHasErrors('newCategoryName');
+        Livewire::test(Form::class, ['type' => 'income'])->set('newCategoryName', 'Tuition')->call('addCategory')->assertHasNoErrors();
+        $this->assertSame(AccountType::Income, Account::query()->where('name', 'Tuition')->sole()->type);
+        $this->assertLocked(fn () => Livewire::test(Form::class, ['type' => 'income'])->set('companyId', $other->id));
+        Livewire::test(Form::class, ['type' => 'transfer'])->set('newCategoryName', 'Injected')->call('addCategory')->assertNotFound();
+
+        $open = Livewire::test(Form::class, ['type' => 'expense']);
+        $company->forceFill(['is_active' => false])->save();
+        $open->set('newCategoryName', 'Injected')->call('addCategory')->assertHasErrors('newCategoryName');
+        $this->assertFalse(Account::where('name', 'Injected')->exists());
+
+        $company->forceFill(['is_active' => true])->save();
+        $this->actingAs($this->user('data-entry', $company));
+        Livewire::test(Form::class, ['type' => 'expense'])->assertDontSee('+ Add a new category')->call('addCategory')->assertForbidden();
+    }
+
     public function test_crafted_company_category_method_and_party_ids_are_rejected(): void
     {
         [$mine, $other] = Company::factory()->count(2)->create();
@@ -116,8 +206,7 @@ class EntriesTest extends TestCase
         $this->actingAs($this->user('accountant', $mine));
         $income = fn () => Livewire::test(Form::class, ['type' => 'income'])->set('categoryAccountId', $this->accountId($mine, '4000'))->set('amount', '100');
 
-        Livewire::test(Form::class, ['type' => 'income'])->set('companyId', (string) $other->id)
-            ->set('categoryAccountId', $this->accountId($other, '4000'))->set('amount', '100')->call('save')->assertHasErrors('companyId');
+        $this->assertLocked(fn () => Livewire::test(Form::class, ['type' => 'income'])->set('companyId', $other->id));
         $income()->set('categoryAccountId', $this->accountId($other, '4000'))->call('save')->assertHasErrors('categoryAccountId');
         $income()->set('categoryAccountId', $this->accountId($mine, '5100'))->call('save')->assertHasErrors('categoryAccountId');
         $income()->set('paymentAccountId', $this->accountId($other, '1000'))->call('save')->assertHasErrors('paymentAccountId');
@@ -125,8 +214,8 @@ class EntriesTest extends TestCase
         $income()->set('partyId', (string) $foreignParty->id)->call('save')->assertHasErrors('partyId');
         $income()->set('paidAmount', '150')->call('save')->assertHasErrors('paidAmount');
         $income()->set('amount', '0.00')->call('save')->assertHasErrors('amount');
-        Livewire::test(Form::class, ['type' => 'income'])->set('companyId', (string) $other->id)->set('addingParty', true)
-            ->set('newPartyName', 'Injected')->call('addParty')->assertHasErrors('companyId');
+        Livewire::test(Form::class, ['type' => 'income'])->set('addingParty', true)->set('newPartyName', 'Mine only')->call('addParty')->assertHasNoErrors();
+        $this->assertSame($mine->id, Party::where('name', 'Mine only')->sole()->company_id);
         Livewire::test(Form::class, ['type' => 'transfer'])->set('creditAccountId', $this->accountId($mine, '1000'))
             ->set('debitAccountId', $this->accountId($mine, '1000'))->set('amount', '100')->call('save')->assertHasErrors('creditAccountId');
 
@@ -181,8 +270,8 @@ class EntriesTest extends TestCase
         $this->actingAs($accountant);
 
         $this->get(route('admin.entries.edit', $bill))->assertOk()->assertSee('৳500.00 has already been settled');
-        $form = Livewire::test(Form::class, ['entry' => $bill])->assertSet('paidAmount', '200.00')->assertSet('amount', '1000.00')
-            ->set('companyId', (string) $other->id)->assertSet('companyId', (string) $mine->id);
+        $form = Livewire::test(Form::class, ['entry' => $bill])->assertSet('paidAmount', '200.00')->assertSet('amount', '1000.00')->assertSet('companyId', $mine->id);
+        $this->assertLocked(fn () => Livewire::test(Form::class, ['entry' => $bill])->set('companyId', $other->id));
         $form->set('amount', '600')->call('save')->assertHasErrors('amount');
         $form->set('amount', '1,500')->set('categoryAccountId', $this->accountId($mine, '5200'))->call('save')
             ->assertHasNoErrors()->assertRedirect(route('admin.entries.index'));
@@ -205,20 +294,6 @@ class EntriesTest extends TestCase
         Livewire::test(Form::class, ['entry' => $opening])->set('amount', '6000')->call('save')->assertHasNoErrors();
         $this->assertSame(6_000_00, app(LedgerService::class)->balance($cash));
         $this->get(route('admin.entries.edit', $voided))->assertForbidden();
-    }
-
-    public function test_inactive_companies_are_not_offered_or_accepted_for_new_entries(): void
-    {
-        $active = Company::factory()->create(['name' => 'Active Traders']);
-        $inactive = Company::factory()->create(['name' => 'Closed Traders', 'is_active' => false]);
-        $this->actingAs($this->user('accountant', $active, $inactive));
-        session(['ledger.company_id' => $inactive->id]);
-
-        Livewire::test(Form::class, ['type' => 'income'])->assertSet('companyId', (string) $active->id)
-            ->assertSee('Active Traders')->assertDontSee('Closed Traders')
-            ->set('companyId', (string) $inactive->id)->set('categoryAccountId', $this->accountId($inactive, '4000'))
-            ->set('amount', '100')->call('save')->assertHasErrors('companyId');
-        $this->assertSame(0, JournalEntry::count());
     }
 
     public function test_entries_of_invisible_companies_cannot_be_opened_edited_settled_or_voided(): void
@@ -295,8 +370,11 @@ class EntriesTest extends TestCase
         $component->call('confirmVoid', $partly->id)->set('voidReason', 'Mistake')->call('void')->assertHasErrors('voidReason');
         $this->assertFalse($partly->fresh()->isVoided());
 
+        $component->assertViewHas('showCompany', true)->assertSee($second->name);
+        $this->context($mine);
+        $component = Livewire::test(Index::class)->assertViewHas('showCompany', false)->assertDontSee($second->name);
         $ids = fn () => $component->viewData('entries')->pluck('id')->all();
-        $component->set('company', (string) $mine->id)->assertViewHas('expense', 3_000_00)
+        $component->assertViewHas('expense', 3_000_00)
             ->set('status', DueStatus::Overdue->value);
         $this->assertSame([$overdue->id], $ids());
         $component->set('status', DueStatus::PartlyPaid->value);
@@ -306,8 +384,9 @@ class EntriesTest extends TestCase
         $component->set('status', '')->set('party', (string) $customer->id);
         $this->assertEqualsCanonicalizing([$overdue->id, $partly->id, $partly->id + 1], $ids());
         $component->set('party', '')->set('from', '2026-09-05')->assertViewHas('income', 0)->assertViewHas('expense', 3_000_00)
-            ->set('from', '')->set('search', 'consult')->assertSee('Consulting fee')->assertDontSee('Wrong receipt')
-            ->set('company', (string) $other->id)->assertSet('party', '')->assertViewHas('income', 0)->assertDontSee('Secret income');
+            ->set('from', '')->set('search', 'consult')->assertSee('Consulting fee')->assertDontSee('Wrong receipt');
+        $this->context($other);
+        Livewire::test(Index::class)->assertViewHas('showCompany', true)->assertViewHas('income', 12_000_00)->assertDontSee('Secret income');
     }
 
     public function test_csv_export_contains_the_filtered_scoped_entries_with_dues(): void
@@ -341,5 +420,27 @@ class EntriesTest extends TestCase
         $this->assertCount(2, explode("\n", trim($filtered)));
         $this->assertStringNotContainsString('Secret income', $this->get(route('admin.entries.export', ['company' => $other->id]))->streamedContent());
         $this->actingAs(User::factory()->create(['role' => 'member']))->get(route('admin.entries.export'))->assertForbidden();
+    }
+
+    public function test_csv_export_follows_the_header_company(): void
+    {
+        [$alpha, $beta, $hidden] = Company::factory()->count(3)->create();
+        $owner = User::factory()->create(['role' => 'owner']);
+        $this->bill($alpha, EntryType::Income, 100, $owner, ['description' => 'Alpha sale']);
+        $this->bill($beta, EntryType::Income, 100, $owner, ['description' => 'Beta sale']);
+        $this->bill($hidden, EntryType::Income, 100, $owner, ['description' => 'Hidden sale']);
+        $this->actingAs($this->user('accountant', $alpha, $beta));
+        $export = fn (array $query = []): string => $this->get(route('admin.entries.export', $query))->assertOk()->streamedContent();
+
+        $all = $export();
+        $this->assertStringContainsString('Alpha sale', $all);
+        $this->assertStringContainsString('Beta sale', $all);
+        $this->context($beta);
+        $this->assertStringNotContainsString('Alpha sale', $export(['company' => $alpha->id]));
+        $this->assertStringContainsString('Beta sale', $export());
+        $this->context($hidden);
+        $crafted = $export();
+        $this->assertStringContainsString('Alpha sale', $crafted);
+        $this->assertStringNotContainsString('Hidden sale', $crafted);
     }
 }

@@ -3,12 +3,16 @@
         <p class="muted">@if($selectedCompany){{ $selectedCompany->name }}@endif @if($selectedAccount) · {{ $selectedAccount->label() }}@endif @if($periodLabel) · {{ $periodLabel }}@endif</p></div>
         <button class="btn btn-secondary no-print" type="button" onclick="window.print()">{{ __('Print') }}</button>
     </div>
-    @if($companyOptions === [])
+    @if(! $hasCompanies)
         <div class="panel"><p class="muted">{{ __('You are not assigned to any company yet.') }}</p></div>
+    @elseif($selectedCompany === null)
+        <div class="panel stack empty-state"><h2>{{ __('Choose a company') }}</h2>
+            <p class="muted">{{ __('An account ledger belongs to one company. Choose a company to see its accounts.') }}</p>
+            <div><a class="btn" href="{{ $chooseCompanyUrl }}" wire:navigate>{{ __('Choose a company') }}</a></div>
+        </div>
     @else
         <div class="panel no-print mb-6">
-            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companyOptions" />
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <x-form.select name="account" :label="__('Account')" wire:model.live="account" :options="$accountOptions" />
                 <x-form.select name="period" :label="__('Period')" wire:model.live="period" :options="$periodOptions" />
                 <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />

@@ -11,7 +11,9 @@ use App\Models\Party;
 use App\Models\RolePermission;
 use App\Models\User;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Livewire\Livewire;
@@ -91,7 +93,13 @@ class DuesReportTest extends TestCase
                 === [[$this->alpha->id, 100_000_00, 44_000_00], [$this->beta->id, 20_000_00, 0]])
             ->assertSee('৳1,20,000.00')->assertSee('৳44,000.00')->assertDontSee('Secret Buyer')
             ->assertSee(route('admin.entries.settle', $this->bills['overdue']->id))
-            ->assertSee(route('admin.reports.party-statement', ['company' => $this->alpha->id, 'party' => $this->rahman->id]));
+            ->assertSee('wire:click="openStatement('.$this->rahman->id.')"', false)
+            ->call('openStatement', $this->rahman->id)->assertRedirect(route('admin.reports.party-statement', ['party' => $this->rahman->id]));
+        $this->assertSame($this->alpha->id, app(CompanyContext::class)->selectedId());
+
+        Livewire::test(Dues::class)->assertViewHas('consolidated', false)
+            ->assertViewHas('sections', fn (array $sections): bool => $sections['receivable']->pluck('party.name')->all() === ['Rahman Traders'])
+            ->assertSee(route('admin.reports.party-statement', ['party' => $this->rahman->id]))->assertDontSee('Beta Buyer');
 
         $this->assertSame(100_000_00, app(LedgerService::class)->outstanding($this->bills['overdue']) + app(LedgerService::class)->outstanding($this->bills['dueToday']));
     }
@@ -106,21 +114,31 @@ class DuesReportTest extends TestCase
             ->set('overdue', false)->set('kind', 'payable')
             ->assertViewHas('sections', fn (array $sections): bool => $sections['receivable']->isEmpty() && $sections['payable']->count() === 1)
             ->set('kind', '')->set('party', (string) $this->rahman->id)
-            ->assertViewHas('companyTotals', fn ($totals): bool => $totals->sum('receivable') === 100_000_00 && $totals->sum('payable') === 0)
-            ->set('company', (string) $this->beta->id)->assertSet('party', '')
+            ->assertViewHas('companyTotals', fn ($totals): bool => $totals->sum('receivable') === 100_000_00 && $totals->sum('payable') === 0);
+
+        session([CompanyContext::SESSION_KEY => $this->beta->id]);
+        Livewire::withQueryParams(['party' => $this->rahman->id])->test(Dues::class)->assertSet('party', '')
             ->assertViewHas('companyTotals', fn ($totals): bool => $totals->pluck('company.id')->all() === [$this->beta->id]);
     }
 
-    public function test_dues_ignore_crafted_company_and_party_ids(): void
+    public function test_dues_ignore_a_crafted_context_party_or_statement_target(): void
     {
         $this->actingAs($this->user('accountant', $this->alpha));
+        session([CompanyContext::SESSION_KEY => $this->hidden->id]);
 
-        Livewire::test(Dues::class)->set('company', (string) $this->hidden->id)->assertSet('company', '')
-            ->set('party', (string) $this->secret->id)->assertSet('party', '')
+        Livewire::test(Dues::class)->set('party', (string) $this->secret->id)->assertSet('party', '')
             ->set('party', (string) $this->betaBuyer->id)->assertSet('party', '')
             ->assertDontSee('Secret Buyer')->assertDontSee('Beta Buyer')->assertSee('Rahman Traders');
         Livewire::withQueryParams(['company' => $this->hidden->id, 'party' => $this->secret->id, 'kind' => 'bogus'])->test(Dues::class)
-            ->assertSet('company', '')->assertSet('party', '')->assertSet('kind', '')->assertDontSee('Secret Buyer')->assertDontSee('৳77,000.00');
+            ->assertSet('party', '')->assertSet('kind', '')->assertDontSee('Secret Buyer')->assertDontSee('৳77,000.00');
+        $this->assertThrows(fn () => Livewire::test(Dues::class)->call('openStatement', $this->secret->id), ModelNotFoundException::class);
+
+        $this->actingAs($this->user('accountant', $this->alpha, $this->beta));
+        session([CompanyContext::SESSION_KEY => $this->hidden->id]);
+        Livewire::test(Dues::class)->assertViewHas('consolidated', true)->assertSee('Beta Buyer')->assertDontSee('Secret Buyer');
+        session([CompanyContext::SESSION_KEY => $this->alpha->id]);
+        $this->assertThrows(fn () => Livewire::test(Dues::class)->call('openStatement', $this->betaBuyer->id), ModelNotFoundException::class);
+        $this->assertSame($this->alpha->id, app(CompanyContext::class)->selectedId());
     }
 
     public function test_dues_actions_follow_permissions(): void
@@ -130,7 +148,7 @@ class DuesReportTest extends TestCase
 
         Livewire::test(Dues::class)->assertSee('Rahman Traders')
             ->assertDontSee(route('admin.entries.settle', $this->bills['overdue']->id))
-            ->assertDontSee(route('admin.reports.party-statement', ['company' => $this->alpha->id, 'party' => $this->rahman->id]));
+            ->assertDontSee(route('admin.reports.party-statement', ['party' => $this->rahman->id]))->assertDontSee('openStatement');
         $this->get(route('admin.reports.party-statement'))->assertForbidden();
         Livewire::test(PartyStatement::class)->assertForbidden();
     }
@@ -139,7 +157,7 @@ class DuesReportTest extends TestCase
     {
         $this->actingAs($this->user('accountant', $this->alpha));
 
-        Livewire::test(PartyStatement::class)->set('company', (string) $this->alpha->id)->set('party', (string) $this->rahman->id)
+        Livewire::test(PartyStatement::class)->set('party', (string) $this->rahman->id)
             ->assertViewHas('report', fn (array $report): bool => $report['opening'] === 100_000_00
                 && array_map(fn (array $row): array => [$row['debit'], $row['credit'], $row['balance']], $report['rows']) === [
                     [0, 30_000_00, 70_000_00], [50_000_00, 20_000_00, 100_000_00], [10_000_00, 10_000_00, 100_000_00],
@@ -153,16 +171,29 @@ class DuesReportTest extends TestCase
             ->assertSee('Closing due (owed by us)');
     }
 
-    public function test_party_statement_ignores_crafted_company_and_party_ids(): void
+    public function test_party_statement_ignores_a_crafted_context_and_party_ids(): void
     {
         $this->actingAs($this->user('accountant', $this->alpha));
+        session([CompanyContext::SESSION_KEY => $this->hidden->id]);
 
-        Livewire::test(PartyStatement::class)->set('company', (string) $this->hidden->id)->assertSet('company', (string) $this->alpha->id)
+        Livewire::test(PartyStatement::class)->assertViewHas('selectedCompany', fn (Company $company): bool => $company->is($this->alpha))
             ->set('party', (string) $this->secret->id)->assertSet('party', '')->assertViewHas('report', null)->assertDontSee('Secret Buyer');
         Livewire::withQueryParams(['company' => $this->hidden->id, 'party' => $this->secret->id, 'period' => 'this_fiscal_year'])->test(PartyStatement::class)
-            ->assertSet('company', (string) $this->alpha->id)->assertSet('party', '')->assertViewHas('report', null)->assertDontSee('৳77,000.00');
-        Livewire::withQueryParams(['company' => $this->alpha->id, 'party' => $this->betaBuyer->id])->test(PartyStatement::class)
-            ->assertSet('party', '')->assertDontSee('Beta Buyer');
+            ->assertSet('party', '')->assertViewHas('report', null)->assertDontSee('৳77,000.00');
+        Livewire::withQueryParams(['party' => $this->betaBuyer->id])->test(PartyStatement::class)->assertSet('party', '')->assertDontSee('Beta Buyer');
+    }
+
+    public function test_party_statement_asks_for_one_company_in_all_mode(): void
+    {
+        $this->actingAs($this->user('accountant', $this->alpha, $this->beta));
+
+        Livewire::withQueryParams(['party' => $this->rahman->id])->test(PartyStatement::class)
+            ->assertViewHas('selectedCompany', null)->assertViewHas('report', null)->assertSet('party', '')
+            ->assertViewHas('partyOptions', ['' => 'Choose a party'])->assertSee('Choose a company')
+            ->assertSee(route('admin.choose-company', ['next' => route('admin.reports.party-statement', ['period' => 'this_fiscal_year'], false)]));
+
+        session([CompanyContext::SESSION_KEY => $this->beta->id]);
+        Livewire::test(PartyStatement::class)->assertViewHas('partyOptions', fn (array $options): bool => array_keys($options) === ['', $this->betaBuyer->id]);
     }
 
     /**

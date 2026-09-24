@@ -3,8 +3,7 @@
         <button class="btn btn-secondary no-print" type="button" onclick="window.print()">{{ __('Print') }}</button>
     </div>
     <div class="panel no-print mb-6">
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companyOptions" />
+        <div class="grid gap-4 sm:grid-cols-3">
             <x-form.select name="period" :label="__('Period')" wire:model.live="period" :options="$periodOptions" />
             <x-form.input name="from" :label="__('From date')" type="date" wire:model.live="from" />
             <x-form.input name="to" :label="__('To date')" type="date" wire:model.live="to" />

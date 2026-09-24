@@ -5,9 +5,9 @@ namespace App\Livewire\Admin\Reports;
 use App\Enums\AccountType;
 use App\Enums\EntryType;
 use App\Livewire\Admin\Reports\Concerns\HasPeriod;
-use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\Party;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +16,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Every posted bill and settlement of one party, with a running due. Debit raises what the party owes us
+ * Every posted bill and settlement of one party of the header company, with a running due. Needs one company. Debit raises what the party owes us
  * (an income bill's total, a payment we made); credit lowers it (money received, an expense bill's total).
  * A positive balance means the party owes us; a negative one means we owe the party.
  */
@@ -28,48 +28,34 @@ class PartyStatement extends Component
     public const ROW_LIMIT = 1000;
 
     #[Url(except: '')]
-    public string $company = '';
-
-    #[Url(except: '')]
     public string $party = '';
 
     public function mount(): void
     {
-        if ($this->company === '') {
-            $this->company = (string) session('ledger.company_id', '');
-        }
         if ($this->party !== '' && ! array_key_exists('period', request()->query())) {
             $this->period = 'this_fiscal_year';
         }
-    }
-
-    public function updatedCompany(): void
-    {
-        $this->party = '';
     }
 
     public function render(): View
     {
         Gate::authorize('reports.view');
         Gate::authorize('parties.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        $company = $companies->firstWhere('id', (int) $this->company) ?? $companies->first();
-        $this->company = (string) $company?->id;
-        if ($company) {
-            session(['ledger.company_id' => $company->id]);
-        }
+        $context = app(CompanyContext::class);
+        $company = $context->isAll() ? null : $context->company();
         $parties = $company ? Party::query()->where('company_id', $company->id)->orderBy('name')->get(['id', 'company_id', 'name', 'phone', 'employee_id']) : collect();
         $party = $parties->firstWhere('id', (int) $this->party);
         $this->party = (string) $party?->id;
         $range = $this->resolvePeriod();
 
         return view('livewire.admin.reports.party-statement', [
-            'companyOptions' => $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
             'partyOptions' => ['' => __('Choose a party')] + $parties->mapWithKeys(fn (Party $item): array => [$item->id => $item->name.($item->isEmployee() ? ' ('.__('employee').')' : '')])->all(),
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
+            'hasCompanies' => $context->options()->isNotEmpty(),
             'selectedCompany' => $company,
             'selectedParty' => $party,
+            'chooseCompanyUrl' => route('admin.choose-company', ['next' => route('admin.reports.party-statement', $this->periodQuery(), false)]),
             'report' => $party && $range ? $this->statement($party, $range[0], $range[1]) : null,
         ])->layout('layouts.admin');
     }

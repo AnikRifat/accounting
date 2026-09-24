@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use App\Support\Money;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -30,7 +31,9 @@ class Form extends Component
     #[Locked]
     public bool $hasEntries = false;
 
-    public string $companyId = '';
+    /** The account's company: from the header context when creating (re-checked on save), from the record when editing. */
+    #[Locked]
+    public ?int $companyId = null;
 
     public string $code = '';
 
@@ -57,7 +60,7 @@ class Form extends Component
             $this->guard($account);
             $this->accountId = $account->id;
             $this->hasEntries = $account->lines()->exists();
-            $this->companyId = (string) $account->company_id;
+            $this->companyId = $account->company_id;
             $this->code = $account->code;
             $this->name = $account->name;
             $this->type = $account->type->value;
@@ -66,9 +69,9 @@ class Form extends Component
             $this->details = (string) $account->details;
             $this->isActive = $account->is_active;
         } else {
-            $companyIds = $this->activeCompanies()->pluck('id')->all();
-            $remembered = (int) session('ledger.company_id');
-            $this->companyId = (string) (in_array($remembered, $companyIds, true) ? $remembered : ($companyIds[0] ?? ''));
+            $company = app(CompanyContext::class)->company();
+            abort_unless($company?->is_active, 404);
+            $this->companyId = $company->id;
         }
         $this->openingDate = today()->toDateString();
     }
@@ -80,11 +83,14 @@ class Form extends Component
         $existing = $this->accountId ? Account::findOrFail($this->accountId) : null;
         if ($existing) {
             $this->guard($existing);
-            $this->companyId = (string) $existing->company_id;
+        } elseif (app(CompanyContext::class)->selectedId() !== $this->companyId
+            || ! Company::visibleTo($user)->where('is_active', true)->whereKey($this->companyId)->exists()) {
+            // Checked before any unique rule runs, so those rules only ever query a company the user may use.
+            $this->addError('companyId', __('The company in the header has changed since this page opened, or is no longer active. Reload the page to continue.'));
+
+            return null;
         }
-        // Validate the company alone first, so the unique rules below never run against a company the user cannot use.
-        $this->validate(['companyId' => ['required', Rule::in($existing ? [$existing->company_id] : $this->activeCompanies()->pluck('id')->all())]], [], ['companyId' => __('company')]);
-        $companyId = (int) $this->companyId;
+        $companyId = $existing ? $existing->company_id : $this->companyId;
         $this->code = trim($this->code);
         $this->name = trim($this->name);
         $data = $this->validate([
@@ -139,7 +145,6 @@ class Form extends Component
 
             return null;
         }
-        session(['ledger.company_id' => $companyId]);
         session()->flash('success', __('Account saved.'));
 
         return redirect()->route('admin.accounts.index');
@@ -151,17 +156,10 @@ class Form extends Component
 
         return view('livewire.admin.accounts.form', [
             'openingEntry' => $existing ? $this->openingEntry($existing) : null,
-            'companies' => ($existing ? Company::visibleTo(auth()->user()) : $this->activeCompanies())->orderBy('name')->get(['id', 'name', 'code'])
-                ->mapWithKeys(fn (Company $company): array => [$company->id => $company->name.' ('.$company->code.')'])->all(),
+            'companyName' => Company::query()->whereKey($this->companyId)->value('name'),
             'paymentTypes' => collect(PaymentType::cases())->mapWithKeys(fn (PaymentType $type): array => [$type->value => $type->label()])->all(),
             'types' => collect(AccountType::cases())->mapWithKeys(fn (AccountType $type): array => [$type->value => $type->label()])->all(),
         ])->layout('layouts.admin');
-    }
-
-    /** New accounts can only be added to active companies the user can access. */
-    private function activeCompanies(): Builder
-    {
-        return Company::visibleTo(auth()->user())->where('is_active', true);
     }
 
     /** The posted opening entry of a cash account, if one was recorded. */

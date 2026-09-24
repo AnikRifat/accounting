@@ -4,36 +4,28 @@ namespace App\Livewire\Admin\Reports;
 
 use App\Enums\EntryType;
 use App\Livewire\Admin\Reports\Concerns\HasPeriod;
-use App\Models\Company;
 use App\Models\JournalEntry;
 use App\Models\Party;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Posted expense entries whose party is an employee, in a period, largest total first. Paid and outstanding are
+ * Posted expense entries whose party is an employee, in a period and the header company context, largest total first. Paid and outstanding are
  * as of today: the outstanding part is the entry's payable minus its posted payments.
  */
 class EmployeeCost extends Component
 {
     use HasPeriod;
 
-    /** A visible company id, or '' for all visible companies. */
-    #[Url(except: '')]
-    public string $company = '';
-
     public function render(): View
     {
         Gate::authorize('reports.view');
         Gate::authorize('employees.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        if (! $companies->contains('id', (int) $this->company)) {
-            $this->company = '';
-        }
-        $companyIds = $this->company === '' ? $companies->pluck('id')->all() : [(int) $this->company];
+        $context = app(CompanyContext::class);
+        $companyIds = $context->companyIds();
         $range = $this->resolvePeriod();
 
         $rows = collect();
@@ -53,11 +45,11 @@ class EmployeeCost extends Component
         }
 
         return view('livewire.admin.reports.employee-cost', [
-            'companyOptions' => ['' => __('All my companies')] + $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
             'range' => $range,
-            'scopeLabel' => $this->company === '' ? __('All my companies') : $companies->firstWhere('id', (int) $this->company)->name,
+            'scopeLabel' => $context->isAll() ? __('All companies') : $context->company()->name,
+            'consolidated' => $context->isAll(),
             'rows' => $rows,
         ])->layout('layouts.admin');
     }

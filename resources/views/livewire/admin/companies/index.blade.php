@@ -1,6 +1,6 @@
 <div>
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ __('Companies') }}</h1><p class="muted">{{ __('Each company keeps its own books, employees and reports.') }}</p></div>@can('companies.create')<a class="btn" href="{{ route('admin.companies.create') }}" wire:navigate>{{ __('Add company') }}</a>@endcan</div>
+    <div class="page-header"><div><p class="eyebrow">{{ __('Organisation') }}</p><h1>{{ __('Companies') }}</h1><p class="muted">{{ __('Each company keeps its own books, employees and reports.') }}</p></div>@can('companies.create')<button type="button" class="btn" x-on:click="$dispatch('open-create-company')" aria-haspopup="dialog" aria-controls="create-company">{{ __('Add company') }}</button>@endcan</div>
     <div class="panel stack">
         <x-form.input name="search" :label="__('Search by name or code')" wire:model.live.debounce.300ms="search" type="search" maxlength="100" />
         <div class="table-wrap"><table><thead><tr><th>{{ __('Company') }}</th><th>{{ __('Code') }}</th><th>{{ __('Phone') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>

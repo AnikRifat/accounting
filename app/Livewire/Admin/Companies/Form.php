@@ -5,9 +5,7 @@ namespace App\Livewire\Admin\Companies;
 use App\Models\Company;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\Features\SupportRedirects\Redirector;
@@ -47,22 +45,13 @@ class Form extends Component
         $actor = auth()->user();
         $existing = $this->companyId ? Company::visibleTo($actor)->findOrFail($this->companyId) : null;
         $this->code = strtoupper(trim($this->code));
-        $data = $this->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'between:2,10', 'regex:/^[A-Z0-9]+$/', Rule::unique('companies', 'code')->ignore($this->companyId)],
-            'address' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:40'],
-            'isActive' => ['boolean'],
-        ], ['code.regex' => __('Use only letters and digits.')]);
-        DB::transaction(function () use ($data, $existing, $actor): void {
-            $company = $existing ?? new Company;
-            $company->fill(['name' => $data['name'], 'code' => $data['code'], 'address' => $data['address'] ?: null,
-                'phone' => $data['phone'] ?: null, 'is_active' => $data['isActive']])->save();
-            // A creator without all-company access must still be able to see what they created.
-            if (! $existing && ! $actor->hasPermission('companies.all')) {
-                $company->users()->attach($actor);
-            }
-        });
+        $data = $this->validate(Company::formRules($this->companyId), ['code.regex' => __('Use only letters and digits.')]);
+        if ($existing) {
+            $existing->update(['name' => $data['name'], 'code' => $data['code'], 'address' => $data['address'] ?: null,
+                'phone' => $data['phone'] ?: null, 'is_active' => $data['isActive']]);
+        } else {
+            Company::createBy($actor, $data);
+        }
         session()->flash('success', __('Company saved.'));
 
         return redirect()->route('admin.companies.index');

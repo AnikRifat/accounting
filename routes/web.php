@@ -6,6 +6,7 @@ use App\Livewire\Admin\Accounts\Form as AccountForm;
 use App\Livewire\Admin\Accounts\Index as AccountIndex;
 use App\Livewire\Admin\Categories\Form as CategoryForm;
 use App\Livewire\Admin\Categories\Index as CategoryIndex;
+use App\Livewire\Admin\ChooseCompany;
 use App\Livewire\Admin\Companies\Form as CompanyForm;
 use App\Livewire\Admin\Companies\Index as CompanyIndex;
 use App\Livewire\Admin\Dashboard;
@@ -49,11 +50,12 @@ Route::post('/admin/logout', function (Request $request) {
 
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access'])->group(function (): void {
     Route::livewire('/', Dashboard::class)->middleware('can:dashboard.view')->name('dashboard');
+    Route::livewire('/choose-company', ChooseCompany::class)->name('choose-company');
     Route::livewire('/users', UserIndex::class)->middleware('can:users.view')->name('users.index');
     Route::livewire('/users/create', UserForm::class)->middleware('can:users.create')->name('users.create');
     Route::livewire('/users/{user}/edit', UserForm::class)->middleware('can:users.update')->name('users.edit');
     Route::livewire('/employees', EmployeeIndex::class)->middleware('can:employees.view')->name('employees.index');
-    Route::livewire('/employees/create', EmployeeForm::class)->middleware('can:employees.create')->name('employees.create');
+    Route::livewire('/employees/create', EmployeeForm::class)->middleware(['can:employees.create', 'company.selected'])->name('employees.create');
     Route::livewire('/employees/{employee}/edit', EmployeeForm::class)->middleware('can:employees.update')->name('employees.edit');
     Route::livewire('/companies', CompanyIndex::class)->middleware('can:companies.view')->name('companies.index');
     Route::livewire('/companies/create', CompanyForm::class)->middleware('can:companies.create')->name('companies.create');
@@ -62,11 +64,11 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
     Route::livewire('/roles/create', RoleForm::class)->middleware(['can:roles.create', 'can:permissions.manage'])->name('roles.create');
     Route::livewire('/roles/{role}/edit', RoleForm::class)->middleware('can:roles.update')->name('roles.edit');
     Route::livewire('/accounts', AccountIndex::class)->middleware('can:accounts.view')->name('accounts.index');
-    Route::livewire('/accounts/create', AccountForm::class)->middleware('can:accounts.manage')->name('accounts.create');
+    Route::livewire('/accounts/create', AccountForm::class)->middleware(['can:accounts.manage', 'company.selected'])->name('accounts.create');
     Route::livewire('/accounts/{account}/edit', AccountForm::class)->middleware('can:accounts.manage')->name('accounts.edit');
     Route::livewire('/entries', EntryIndex::class)->middleware('can:entries.view')->name('entries.index');
     Route::get('/entries/export', EntryExportController::class)->middleware('can:entries.view')->name('entries.export');
-    Route::livewire('/entries/create/{type}', EntryForm::class)->whereIn('type', ['income', 'expense', 'transfer'])->middleware('can:entries.create')->name('entries.create');
+    Route::livewire('/entries/create/{type}', EntryForm::class)->whereIn('type', ['income', 'expense', 'transfer'])->middleware(['can:entries.create', 'company.selected'])->name('entries.create');
     Route::livewire('/entries/{entry}/edit', EntryForm::class)->middleware('can:entries.update')->name('entries.edit');
     Route::livewire('/entries/{entry}/settle', EntrySettle::class)->middleware('can:entries.create')->name('entries.settle');
     Route::livewire('/entries/{entry}/settlement/edit', EntrySettle::class)->middleware('can:entries.update')->name('entries.settlement.edit');
@@ -80,13 +82,13 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
         Route::livewire('/reports/party-statement', PartyStatement::class)->middleware('can:parties.view')->name('reports.party-statement');
     });
     Route::livewire('/parties', PartyIndex::class)->middleware('can:parties.view')->name('parties.index');
-    Route::livewire('/parties/create', PartyForm::class)->middleware('can:parties.create')->name('parties.create');
+    Route::livewire('/parties/create', PartyForm::class)->middleware(['can:parties.create', 'company.selected'])->name('parties.create');
     Route::livewire('/parties/{party}/edit', PartyForm::class)->middleware('can:parties.update')->name('parties.edit');
     Route::livewire('/categories', CategoryIndex::class)->middleware('can:accounts.view')->name('categories.index');
     Route::livewire('/categories/create', CategoryForm::class)->middleware('can:accounts.manage')->name('categories.create');
     Route::livewire('/categories/{category}/edit', CategoryForm::class)->middleware('can:accounts.manage')->name('categories.edit');
     Route::livewire('/payment-methods', PaymentMethodIndex::class)->middleware('can:accounts.view')->name('payment-methods.index');
-    Route::livewire('/payment-methods/create', PaymentMethodForm::class)->middleware('can:accounts.manage')->name('payment-methods.create');
+    Route::livewire('/payment-methods/create', PaymentMethodForm::class)->middleware(['can:accounts.manage', 'company.selected'])->name('payment-methods.create');
     Route::livewire('/payment-methods/{paymentMethod}/edit', PaymentMethodForm::class)->middleware('can:accounts.manage')->name('payment-methods.edit');
     Route::livewire('/settings', Settings::class)->middleware('can:settings.view')->name('settings');
     Route::livewire('/media', MediaIndex::class)->middleware('can:media.view')->name('media');

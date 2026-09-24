@@ -10,8 +10,10 @@ use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\RolePermission;
 use App\Models\User;
+use App\Support\CompanyContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Exceptions\PublicPropertyNotFoundException;
 use Livewire\Livewire;
 use Tests\Feature\Concerns\PostsLedgerEntries;
 use Tests\TestCase;
@@ -67,13 +69,19 @@ class DashboardTest extends TestCase
                 && count($cash['companies']) === 1 && collect($cash['companies'][0]['accounts'])->pluck('account.code')->all() === ['1000', '1010', '1020'])
             ->assertViewHas('activeEmployees', 2)
             ->assertViewHas('recent', fn ($recent): bool => $recent->count() === 7 && $recent->every(fn (JournalEntry $entry): bool => $entry->company_id === $mine->id && ! $entry->isVoided()))
-            ->assertSee('Mine Ltd')->assertDontSee('Other Ltd')->assertDontSee('Secret income')
-            ->set('company', (string) $other->id)->assertSet('company', '')->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income');
+            ->assertSee('Mine Ltd')->assertDontSee('Other Ltd')->assertDontSee('Secret income');
+        session([CompanyContext::SESSION_KEY => $other->id]);
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income');
 
         $this->actingAs($this->owner);
-        Livewire::test(Dashboard::class)->assertViewHas('activeEmployees', 7)->assertSee('Secret income')
-            ->set('company', (string) $mine->id)->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income')
+        session([CompanyContext::SESSION_KEY => null]);
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', true)->assertViewHas('activeEmployees', 7)->assertSee('Secret income')
+            ->assertViewHas('cash', fn (array $cash): bool => count($cash['companies']) === 2)->assertSee('Other Ltd');
+        session([CompanyContext::SESSION_KEY => $mine->id]);
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income')
+            ->assertViewHas('cash', fn (array $cash): bool => count($cash['companies']) === 1)
             ->assertViewHas('months', fn (array $months): bool => $months[5]['income'] === 10_000_00);
+        $this->assertThrows(fn () => Livewire::test(Dashboard::class)->set('company', (string) $other->id), PublicPropertyNotFoundException::class);
     }
 
     public function test_dues_blocks_show_scoped_totals_overdue_count_and_next_dues(): void

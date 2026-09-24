@@ -1,9 +1,9 @@
 <div>
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ $paymentMethodId ? __('Edit payment method') : __('Add payment method') }}</h1><p class="muted">{{ __('Names are unique within a company. The code is assigned automatically.') }}</p></div></div>
+    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ $paymentMethodId ? __('Edit payment method') : __('Add payment method') }}</h1><p class="muted">{{ __('Company: :name', ['name' => $companyName]) }}</p></div></div>
+    @error('company')<p class="error mb-4" role="alert">{{ $message }}</p>@enderror
     <form wire:submit="save" class="stack">
         <div class="panel"><div class="form-grid">
-            <x-form.select name="companyId" :label="__('Company')" wire:model="companyId" :options="$companies" required :disabled="$paymentMethodId !== null" :help="$paymentMethodId ? __('A payment method cannot move to another company.') : __('Only active companies are listed.')" />
             <x-form.select name="paymentType" :label="__('Payment type')" wire:model="paymentType" :options="$paymentTypes" required />
             <x-form.input name="name" :label="__('Name')" wire:model="name" required maxlength="150" autocomplete="off" :help="__('For example Cash in Hand, City Bank or bKash.')" />
             <x-form.input name="details" :label="__('Account or wallet number')" wire:model="details" maxlength="255" autocomplete="off" />

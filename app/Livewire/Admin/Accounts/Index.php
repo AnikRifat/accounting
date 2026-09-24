@@ -3,36 +3,59 @@
 namespace App\Livewire\Admin\Accounts;
 
 use App\Enums\AccountType;
-use App\Models\Company;
+use App\Models\Account;
 use App\Services\LedgerService;
+use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
+/**
+ * Accounts of the header's company with current balances. On "All companies" accounts are combined by
+ * (type, name) with a summed balance and a per-company breakdown; each company keeps its own books.
+ */
 class Index extends Component
 {
-    public string $companyId = '';
-
-    public function mount(): void
+    /** Opens an account's edit page in its own company, switching the header to that company. */
+    public function edit(int $accountId): void
     {
-        $this->companyId = (string) session('ledger.company_id', '');
+        Gate::authorize('accounts.manage');
+        $account = Account::query()->whereIn('company_id', auth()->user()->accessibleCompanyIds())->where('is_system', false)->findOrFail($accountId);
+        app(CompanyContext::class)->select($account->company_id);
+        $this->redirectRoute('admin.accounts.edit', ['account' => $account], navigate: true);
     }
 
     public function render(): View
     {
         Gate::authorize('accounts.view');
-        $companies = Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']);
-        $company = $companies->firstWhere('id', (int) $this->companyId) ?? $companies->first();
-        $this->companyId = (string) $company?->id;
-        if ($company) {
-            session(['ledger.company_id' => $company->id]);
-        }
-        $accounts = $company ? $company->accounts()->orderBy('code')->get() : collect();
+        $context = app(CompanyContext::class);
+        $accounts = Account::query()->whereIn('company_id', $context->companyIds())->with('company:id,name,code')
+            ->orderBy('code')->orderBy('company_id')->get();
+        $balances = app(LedgerService::class)->balances($accounts);
 
         return view('livewire.admin.accounts.index', [
-            'companies' => $companies->mapWithKeys(fn (Company $item): array => [$item->id => $item->name.' ('.$item->code.')'])->all(),
-            'groups' => collect(AccountType::cases())->mapWithKeys(fn (AccountType $type): array => [$type->value => $accounts->where('type', $type)]),
-            'balances' => app(LedgerService::class)->balances($accounts),
+            'all' => $context->isAll(),
+            'hasCompanies' => $context->options()->isNotEmpty(),
+            'groups' => collect(AccountType::cases())->mapWithKeys(fn (AccountType $type): array => [
+                $type->value => $context->isAll() ? $this->combined($accounts->where('type', $type), $balances) : $accounts->where('type', $type),
+            ]),
+            'balances' => $balances,
         ])->layout('layouts.admin');
+    }
+
+    /**
+     * @param  Collection<int, Account>  $accounts
+     * @param  array<int, int>  $balances
+     * @return Collection<int, array{name: string, codes: string, balance: int, accounts: Collection<int, Account>}>
+     */
+    private function combined(Collection $accounts, array $balances): Collection
+    {
+        return $accounts->groupBy(fn (Account $account): string => mb_strtolower(trim($account->name)))->map(fn (Collection $same): array => [
+            'name' => $same->first()->name,
+            'codes' => $same->pluck('code')->unique()->implode(', '),
+            'balance' => $same->sum(fn (Account $account): int => $balances[$account->id] ?? 0),
+            'accounts' => $same->sortBy(fn (Account $account): string => $account->company->name)->values(),
+        ])->values();
     }
 }

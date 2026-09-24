@@ -9,8 +9,10 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\Party;
 use App\Models\User;
+use App\Support\CompanyContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -30,7 +32,7 @@ class PartiesTest extends TestCase
     {
         $company = Company::factory()->create();
         $this->actingAs($this->userFor('accountant', $company));
-        Livewire::test(Form::class)->assertSet('companyId', (string) $company->id)->set('name', '  Karim Traders ')->set('phone', ' 01711000000 ')
+        Livewire::test(Form::class)->assertSet('companyId', $company->id)->set('name', '  Karim Traders ')->set('phone', ' 01711000000 ')
             ->set('address', 'Motijheel, Dhaka')->set('notes', '   ')->call('save')->assertHasNoErrors()->assertRedirect(route('admin.parties.index'));
         $party = Party::sole();
         $this->assertSame([$company->id, 'Karim Traders', '01711000000', 'Motijheel, Dhaka', null, true, false],
@@ -46,17 +48,66 @@ class PartiesTest extends TestCase
         $this->assertDatabaseCount('parties', 0);
     }
 
-    public function test_parties_cannot_be_created_in_hidden_or_inactive_companies(): void
+    public function test_create_asks_for_an_active_company_while_the_header_is_on_all_or_inactive(): void
     {
-        [$assigned, $hidden] = Company::factory()->count(2)->create();
-        $inactive = Company::factory()->create(['is_active' => false, 'name' => 'Closed Ltd']);
-        $this->actingAs($this->userFor('accountant', $assigned, $inactive));
+        [$first, $second] = Company::factory()->count(2)->create();
+        $inactive = Company::factory()->create(['is_active' => false]);
+        $this->actingAs($this->userFor('accountant', $first, $second, $inactive));
+        $choose = route('admin.choose-company', ['next' => '/admin/parties/create']);
 
-        $this->get('/admin/parties/create')->assertOk()->assertDontSee('Closed Ltd');
-        foreach ([$hidden, $inactive] as $company) {
-            Livewire::test(Form::class)->set('companyId', (string) $company->id)->set('name', 'Forged')->call('save')->assertHasErrors(['companyId' => 'in']);
+        $this->get('/admin/parties/create')->assertRedirect($choose);
+        session([CompanyContext::SESSION_KEY => $inactive->id]);
+        $this->get('/admin/parties/create')->assertRedirect($choose);
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        $this->get('/admin/parties/create')->assertOk()->assertSee($second->name);
+    }
+
+    public function test_new_parties_go_to_the_header_company_and_crafted_values_cannot_move_them(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->create();
+        $hidden = Company::factory()->create();
+        $this->actingAs($this->userFor('accountant', $first, $second));
+
+        // A crafted session value for an invisible company falls back to All, so the create page asks for a company.
+        session([CompanyContext::SESSION_KEY => $hidden->id]);
+        $this->get('/admin/parties/create')->assertRedirect(route('admin.choose-company', ['next' => '/admin/parties/create']));
+
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        $component = Livewire::test(Form::class)->assertSet('companyId', $second->id);
+        try {
+            $component->set('companyId', $hidden->id);
+            $this->fail('The company of the form must not be settable from the client.');
+        } catch (CannotUpdateLockedPropertyException) {
         }
-        $this->assertDatabaseMissing('parties', ['name' => 'Forged']);
+        $component->set('name', 'Supplier')->call('save')->assertHasNoErrors();
+        $this->assertDatabaseHas('parties', ['name' => 'Supplier', 'company_id' => $second->id]);
+    }
+
+    public function test_save_fails_when_the_header_company_changed_or_became_inactive(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->create();
+        $this->actingAs($this->userFor('accountant', $first, $second));
+        session([CompanyContext::SESSION_KEY => $first->id]);
+        $component = Livewire::test(Form::class)->set('name', 'Late Supplier');
+
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        $component->call('save')->assertHasErrors('company');
+        session([CompanyContext::SESSION_KEY => $first->id]);
+        $first->update(['is_active' => false]);
+        $component->call('save')->assertHasErrors('company');
+        $this->assertDatabaseCount('parties', 0);
+    }
+
+    public function test_company_column_shows_only_on_all_companies(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->create();
+        Party::factory()->for($first)->create(['name' => 'First Customer']);
+        Party::factory()->for($second)->create(['name' => 'Second Customer']);
+        $this->actingAs($this->userFor('accountant', $first, $second));
+
+        $this->get('/admin/parties')->assertOk()->assertSeeInOrder(['<th>'.__('Company').'</th>', 'First Customer', $first->name], false)->assertSee('Second Customer');
+        session([CompanyContext::SESSION_KEY => $second->id]);
+        $this->get('/admin/parties')->assertOk()->assertSee('Second Customer')->assertDontSee('First Customer')->assertDontSee('<th>'.__('Company').'</th>', false);
     }
 
     public function test_listing_and_editing_are_limited_to_assigned_companies(): void
@@ -67,11 +118,12 @@ class PartiesTest extends TestCase
         $this->actingAs($this->userFor('accountant', $assigned));
 
         $this->get('/admin/parties')->assertOk()->assertSee('Visible Supplier')->assertDontSee('Hidden Supplier');
-        Livewire::test(Index::class)->set('companyId', (string) $hidden->id)->assertDontSee('Hidden Supplier');
+        session([CompanyContext::SESSION_KEY => $hidden->id]);
+        Livewire::test(Index::class)->assertSee('Visible Supplier')->assertDontSee('Hidden Supplier');
         $this->get('/admin/parties/'.$mine->id.'/edit')->assertOk();
         $this->get('/admin/parties/'.$other->id.'/edit')->assertNotFound();
 
-        Livewire::test(Form::class, ['party' => $mine])->set('companyId', (string) $hidden->id)->set('name', 'Renamed')->set('isActive', false)
+        Livewire::test(Form::class, ['party' => $mine])->set('name', 'Renamed')->set('isActive', false)
             ->call('save')->assertHasNoErrors();
         $this->assertSame([$assigned->id, 'Renamed', false], [$mine->fresh()->company_id, $mine->fresh()->name, $mine->fresh()->is_active]);
     }

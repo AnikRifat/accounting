@@ -172,6 +172,80 @@ Rules:
   - Employee cost is based on employee parties and also requires `employees.view`;
   - the dashboard adds total receivable, total payable, overdue count and the next 5 dues.
 
+## Pending increment 8: employees become users (Anik, 2026-09-24; relayed by session frish-5f, which implements it after increment 7)
+
+- Every employee is a user and must log in. The separate Employees module, model, migration,
+  `employees.*` permissions and tests are removed.
+- A user can belong to many companies, with no home company, and gets an automatic party in each
+  assigned company (`parties.employee_id` becomes `user_id`).
+- Exactly one super admin (owner) exists and bypasses all permission checks. Administrator becomes
+  a normal, editable role, no longer fixed to `*`.
+- Also reworked: the Employee cost report (by user parties), the Parties screens and the
+  DemoSeeder.
+- Until then, no new code may depend on `Employee`.
+
+## Increment 7 contract: header company switcher (Anik, 2026-09-24)
+
+Decisions:
+- One company switcher in the header replaces every per-page company filter and form field.
+- "All companies" shows data combined; one company shows only that company.
+- In All mode, Categories and the Chart of accounts show one combined row per name, and adding a
+  category adds it to every company. Each company keeps its own books underneath.
+- Creating a record while on "All companies" first asks for a company, then switches the header to
+  it.
+
+Coordinator-built foundation (done, tested in `tests/Feature/CompanyContextTest.php`):
+- **`App\Support\CompanyContext`** (resolve with `app(CompanyContext::class)`, never cache it):
+  - `options()`: visible companies, including inactive ones;
+  - `selectedId(): ?int`: null means all; a single-company user is pinned to it; a stale or
+    invisible selection returns null;
+  - `isAll()`, `company(): ?Company`;
+  - `companyIds(): list<int>`: `[selected]` or every visible id;
+  - `select(?int): bool`.
+  - Session key `company_context`.
+- **`App\Livewire\CompanySwitcher`** in the layout header. It uses the searchable `x-form.select`
+  and reloads the current page on change.
+- **Route middleware alias `company.selected`**: when the context is All, or the selected company
+  is inactive, it redirects to `admin.choose-company?next=<uri>`. `App\Livewire\Admin\ChooseCompany`
+  lists active visible companies, selects one, and follows only `/admin/…` paths.
+
+Rules for every module:
+1. **No company filters or pickers.** Remove every company select or filter property and control,
+   and every use of the old `ledger.company_id` session key. The read scope is
+   `CompanyContext::companyIds()`. It is always a subset of the visible companies.
+2. **Company column.** In All mode, lists and reports show a Company column or grouping. In
+   one-company mode, hide it.
+3. **Create pages** (entries.create, parties.create, employees.create, payment-methods.create,
+   accounts.create) get the `company.selected` middleware.
+   - The form takes its company from `CompanyContext::company()`, never from a client property.
+   - On save, the server re-checks it: the company is active and visible. If the context changed
+     in another tab, the save fails with a clear error.
+   - The company name is shown as read-only text in the page header.
+   - The quick-add category/party drawers in the entry form validate against that same company.
+4. **Categories create:** no middleware.
+   - In All mode it creates the category in every active visible company that doesn't already
+     have that name, each with `nextCode`, in one transaction. The flash message names any
+     companies that were skipped.
+   - In company mode it creates the category in that company only.
+5. **Editing:** a record's company comes from the record, and there is no company field.
+   - Records outside `accessibleCompanyIds()` → 404, as before.
+   - Editing works in either mode.
+6. **Combined views in All mode:**
+   - **Categories:** rows grouped by (type, name), showing which companies have each (edit links
+     per company, which switch context to that company).
+   - **Chart of accounts:** grouped by (type, name) with the summed balance and a per-company
+     breakdown.
+   - **Payment methods:** grouped by company with a grand total; not merged, since they are real
+     separate accounts.
+   - **Trial balance:** consolidated by (type, name) and still balanced.
+   - **Income statement:** per-company columns plus a Total.
+   - **Dues, Employee cost and the Dashboard:** combined across companies.
+   - **Account ledger and Party statement:** need one company. In All mode they show an empty state
+     with a "choose a company" link (`admin.choose-company?next=<current>`).
+7. **Tests:** set the context with `session([CompanyContext::SESSION_KEY => $id])`, or through the
+   switcher. Isolation tests must prove that a crafted session value for an invisible company falls
+   back to All-visible, and that crafted Livewire properties can't pick a company.
+
 ## Increments
 
 | # | Increment | Owner | Status |
@@ -189,6 +263,12 @@ Rules:
 | 5c | Dues report, party statement, employee cost on parties, dashboard dues, DemoSeeder rework and guard, review-3 fixes | agent `reports` | after 5a |
 | 4c | Behavior verification of criteria 1–7 (pre-rework code) | agent `verify` | PASS 1–7, integrity invariants hold, 70-request HTTP smoke clean; AC 8 not run (superseded). Re-run after increment 5. Verification note: `artisan serve` reloads `.env` (MySQL) even with a `DB_*` override, so use `php -S … server.php` for SQLite smoke runs. |
 | 5a result | Ledger core for dues | agent `ledger` | done: 37 tests in its files; all 11 extra rules accepted (unpaid part ≥ settled, bill date ≤ first settlement, etc.) |
+| 5c result | Dues report, party statement, employee cost on parties, dashboard dues, DemoSeeder guard + rework | agent `reports` | done: 159 tests green combined; seeder refuses outside local/testing and on non-empty DB, exits 1 |
+| 7a | Header switcher foundation | coordinator | done |
+| 7b | Entries (index, form, settle, export), Chart of accounts | agent `ledger` | done: 41 tests in its files; companyId `#[Locked]` from context; CSV keeps Company column in both modes |
+| 7c | Parties, Employees, Categories, Payment methods | agent `org` | in progress |
+| 7d | Reports, Dashboard | agent `reports` | done: context-scoped; consolidated trial balance; ledger/party statement ask for a company in All mode |
+| 7e | New company from the header (Anik): "+ New company" beside the switcher and "Add company" on the Companies list both open one off-canvas drawer (`App\Livewire\CreateCompanyDrawer`, event `open-create-company`); shared `Company::formRules()` / `Company::createBy()` | coordinator | done: 2 tests; switches the header to the new company |
 | 6-mysql | Rebuild local MySQL `frish` with `migrate:fresh --seed` (Anik approved 2026-09-24) and re-check the dues queries on MySQL | coordinator | after 5c |
 | 6 | Final review, behavior verification, handover (AGENTS.md and README done; refresh for increment 5) | coordinator + agents | last |
 

@@ -13,9 +13,7 @@
             @endcan
         </div>
     @else
-        <div class="page-header"><div><p class="eyebrow">{{ __('Workspace') }}</p><h1>{{ __('Overview') }}</h1><p class="muted">{{ __('Posted entries only; voided entries never count.') }}</p></div>
-            <div class="dashboard-filter"><x-form.select name="company" :label="__('Company')" wire:model.live="company" :options="$companyOptions" /></div>
-        </div>
+        <div class="page-header"><div><p class="eyebrow">{{ __('Workspace') }}</p><h1>{{ __('Overview') }}</h1><p class="muted">{{ $scopeLabel }} · {{ __('Posted entries only; voided entries never count.') }}</p></div></div>
         @can('entries.create')
             <div class="flex flex-wrap gap-3 mb-6">
                 <a class="btn" href="{{ route('admin.entries.create', 'income') }}" wire:navigate>{{ __('Record income') }}</a>
@@ -92,7 +90,7 @@
                         <thead><tr><th scope="col">{{ __('Due date') }}</th><th scope="col">{{ __('Party') }}</th><th scope="col">{{ __('Entry') }}</th><th scope="col" class="text-right">{{ __('Outstanding') }}</th></tr></thead>
                         <tbody>@foreach($dues['next'] as $bill)
                             <tr wire:key="next-due-{{ $bill->id }}"><td class="whitespace-nowrap">{{ $bill->due_date?->format('d M Y') }}@if($bill->dueStatus() === \App\Enums\DueStatus::Overdue) <span class="badge badge-danger">{{ __('Overdue') }}</span>@endif</td>
-                                <td>{{ $bill->party?->name }}<p class="muted">{{ $bill->company->name }}</p></td>
+                                <td>{{ $bill->party?->name }}@if($consolidated)<p class="muted">{{ $bill->company->name }}</p>@endif</td>
                                 <td>{{ $bill->number }}<p class="muted">{{ $bill->type === \App\Enums\EntryType::Income ? __('Receivable') : __('Payable') }}</p></td>
                                 <td class="text-right tabular-nums whitespace-nowrap">{{ \App\Support\Money::format((int) $bill->outstanding) }}</td></tr>
                         @endforeach</tbody>
@@ -110,7 +108,7 @@
                             <thead><tr><th scope="col">{{ __('Account') }}</th><th scope="col" class="text-right">{{ __('Balance') }}</th></tr></thead>
                             @foreach($cash['companies'] as $group)
                                 <tbody wire:key="cash-{{ $group['company']->id }}">
-                                    <tr class="section-row"><th scope="rowgroup" colspan="2">{{ $group['company']->name }}</th></tr>
+                                    @if($consolidated)<tr class="section-row"><th scope="rowgroup" colspan="2">{{ $group['company']->name }}</th></tr>@endif
                                     @foreach($group['accounts'] as $row)<tr wire:key="cash-account-{{ $row['account']->id }}"><th scope="row" class="row-label">{{ $row['account']->name }}@if($row['account']->payment_type)<p class="muted">{{ $row['account']->payment_type->label() }}</p>@endif</th><td class="text-right tabular-nums">{{ \App\Support\Money::format($row['balance']) }}</td></tr>@endforeach
                                     @if(count($cash['companies']) > 1)<tr class="total-row"><th scope="row">{{ __(':company total', ['company' => $group['company']->code]) }}</th><td class="text-right tabular-nums">{{ \App\Support\Money::format($group['total']) }}</td></tr>@endif
                                 </tbody>
@@ -129,7 +127,7 @@
                         <div class="table-wrap"><table><caption class="sr-only">{{ __('Recent entries') }}</caption>
                             <thead><tr><th scope="col">{{ __('Entry') }}</th><th scope="col">{{ __('Type') }}</th><th scope="col" class="text-right">{{ __('Amount') }}</th></tr></thead>
                             <tbody>@foreach($recent as $entry)
-                                <tr wire:key="recent-{{ $entry->id }}"><td><strong>{{ $entry->number }}</strong><p class="muted">{{ $entry->entry_date->format('d M Y') }} · {{ $entry->company->name }}@if($entry->party) · {{ $entry->party->name }}@endif</p>@if($entry->description)<p class="muted">{{ $entry->description }}</p>@endif</td>
+                                <tr wire:key="recent-{{ $entry->id }}"><td><strong>{{ $entry->number }}</strong><p class="muted">{{ $entry->entry_date->format('d M Y') }}@if($consolidated) · {{ $entry->company->name }}@endif @if($entry->party) · {{ $entry->party->name }}@endif</p>@if($entry->description)<p class="muted">{{ $entry->description }}</p>@endif</td>
                                     <td>{{ $entry->type->label() }}</td><td class="text-right tabular-nums whitespace-nowrap">{{ \App\Support\Money::format($entry->amount) }}</td></tr>
                             @endforeach</tbody>
                         </table></div>
