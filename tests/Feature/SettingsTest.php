@@ -29,9 +29,9 @@ class SettingsTest extends TestCase
         $this->getJson('/api/v1/configuration')->assertOk()->assertJsonMissing(['internal_key' => 'private-placeholder']);
     }
 
-    public function test_employee_cannot_change_application_settings(): void
+    public function test_accountant_cannot_change_application_settings(): void
     {
-        $this->actingAs(User::factory()->create(['role' => 'employee']));
+        $this->actingAs(User::factory()->create(['role' => 'accountant']));
         $this->get('/admin/settings')->assertForbidden();
     }
 }

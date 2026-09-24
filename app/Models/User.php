@@ -8,7 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -33,13 +33,24 @@ class User extends Authenticatable
         return $this->role === Permissions::ROOT_ROLE;
     }
 
-    public function employee(): HasOne
-    {
-        return $this->hasOne(Employee::class);
-    }
-
     public function hasPermission(string $permission): bool
     {
         return app(Permissions::class)->allows($this, $permission);
+    }
+
+    public function companies(): BelongsToMany
+    {
+        return $this->belongsToMany(Company::class);
+    }
+
+    /** @return list<int> */
+    public function accessibleCompanyIds(): array
+    {
+        return Company::visibleTo($this)->pluck('id')->all();
+    }
+
+    public function canAccessCompany(int $companyId): bool
+    {
+        return Company::visibleTo($this)->whereKey($companyId)->exists();
     }
 }

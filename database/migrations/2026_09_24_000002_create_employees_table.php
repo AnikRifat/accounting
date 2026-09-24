@@ -10,12 +10,17 @@ return new class extends Migration
     {
         Schema::create('employees', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
-            $table->string('employee_code')->unique();
-            $table->string('job_title')->nullable();
+            $table->foreignId('company_id')->constrained();
+            $table->string('employee_code', 30);
+            $table->string('name');
+            $table->string('designation')->nullable();
             $table->string('department')->nullable();
             $table->string('phone', 40)->nullable();
+            $table->bigInteger('monthly_salary')->default(0);
+            $table->date('joined_on')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->unique(['company_id', 'employee_code']);
         });
     }
 

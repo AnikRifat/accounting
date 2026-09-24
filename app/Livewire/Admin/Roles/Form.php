@@ -44,7 +44,7 @@ class Form extends Component
         $this->validate(['label' => ['required', 'string', 'max:80'], 'isActive' => ['boolean'], 'permissions' => ['array'], 'permissions.*' => ['string', 'distinct', Rule::in($registry->catalogue())]]);
         $key = $this->roleKey ?? Str::slug(trim($this->label), '_');
         if ($this->roleKey === null && ($key === '' || $key === Permissions::ROOT_ROLE || in_array($key, $registry->assignableRoles(), true))) {
-            $this->addError('label', 'Choose a unique name that does not match a built-in role.');
+            $this->addError('label', __('Choose a unique name that does not match a built-in role.'));
 
             return null;
         }
@@ -57,14 +57,14 @@ class Form extends Component
             RolePermission::updateOrCreate(['role' => $key], ['label' => trim($this->label), 'permissions' => $registry->sanitise($this->permissions), 'is_active' => $this->isActive]);
         } else {
             if ($this->label !== $registry->label($key) || $this->permissions !== $registry->forRole($key)) {
-                $this->addError('label', 'System roles have fixed names and permissions. Create a custom role instead.');
+                $this->addError('label', __('System roles have fixed names and permissions. Create a custom role instead.'));
 
                 return null;
             }
             RolePermission::firstOrCreate(['role' => $key], ['permissions' => []])->update(['is_active' => $this->isActive]);
         }
         $registry->flush();
-        session()->flash('success', 'Role saved.');
+        session()->flash('success', __('Role saved.'));
 
         return redirect()->route('admin.roles.index');
     }

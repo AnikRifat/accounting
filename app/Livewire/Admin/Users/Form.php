@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Admin\Users;
 
-use App\Models\Employee;
+use App\Models\Company;
 use App\Models\User;
 use App\Support\Permissions;
 use Illuminate\Contracts\View\View;
@@ -20,9 +20,6 @@ class Form extends Component
     #[Locked]
     public ?int $userId = null;
 
-    #[Locked]
-    public bool $employee = false;
-
     public string $name = '';
 
     public string $email = '';
@@ -33,47 +30,30 @@ class Form extends Component
 
     public bool $isActive = true;
 
-    public string $role = 'member';
+    public string $role = 'data-entry';
 
     public array $extraRoles = [];
 
     public array $permissions = [];
 
-    public string $employeeCode = '';
+    public array $companyIds = [];
 
-    public string $jobTitle = '';
-
-    public string $department = '';
-
-    public string $phone = '';
-
-    public function module(): string
+    public function mount(?User $user = null): void
     {
-        return $this->employee ? 'employees' : 'users';
-    }
-
-    public function mount(?User $user = null, bool $employee = false): void
-    {
-        $this->employee = $employee;
         $this->userId = $user?->exists ? $user->id : null;
-        Gate::authorize($this->module().($this->userId ? '.update' : '.create'));
+        Gate::authorize($this->userId ? 'users.update' : 'users.create');
         if ($this->userId) {
-            abort_if($user->isRoot(), 403, 'The root account cannot be edited here.');
-            abort_if($employee && ! $user->employee, 404);
+            abort_if($user->isRoot(), 403, __('The root account cannot be edited here.'));
+            abort_unless(ManageableUsers::for(auth()->user())->whereKey($user->id)->exists(), 404);
             $this->name = $user->name;
             $this->email = $user->email;
             $this->isActive = $user->is_active;
             $this->role = $user->role;
             $this->extraRoles = $user->extra_roles ?? [];
-            $this->refreshPermissions();
-            $this->employeeCode = $user->employee?->employee_code ?? '';
-            $this->jobTitle = $user->employee?->job_title ?? '';
-            $this->department = $user->employee?->department ?? '';
-            $this->phone = $user->employee?->phone ?? '';
-        } else {
-            $this->role = $employee ? 'employee' : 'member';
-            $this->refreshPermissions();
+            $this->companyIds = $user->companies()->whereIn('companies.id', auth()->user()->accessibleCompanyIds())
+                ->pluck('companies.id')->map(fn (int $id): string => (string) $id)->all();
         }
+        $this->refreshPermissions();
     }
 
     public function updatedRole(): void
@@ -94,12 +74,12 @@ class Form extends Component
 
     public function save(): Redirector|RedirectResponse|null
     {
-        Gate::authorize($this->module().($this->userId ? '.update' : '.create'));
+        Gate::authorize($this->userId ? 'users.update' : 'users.create');
         $registry = app(Permissions::class);
         $existing = $this->userId ? User::findOrFail($this->userId) : null;
         abort_if($existing?->isRoot(), 403);
-        abort_if($this->employee && $existing && ! $existing->employee, 404);
-        $previousRole = $existing?->role ?? ($this->employee ? 'employee' : 'member');
+        abort_if($existing && ! ManageableUsers::for(auth()->user())->whereKey($existing->id)->exists(), 404);
+        $previousRole = $existing?->role ?? 'data-entry';
         $previousExtras = $existing?->extra_roles ?? [];
         if ($this->role !== $previousRole || array_diff($this->extraRoles, $previousExtras) || array_diff($previousExtras, $this->extraRoles)) {
             Gate::authorize('roles.assign');
@@ -112,6 +92,7 @@ class Form extends Component
         }
         $allowedExtras = array_intersect($registry->systemRoles(), $registry->enabledRoles());
         $allowedExtras = array_unique([...$allowedExtras, ...($existing->extra_roles ?? [])]);
+        $visibleCompanyIds = auth()->user()->accessibleCompanyIds();
         $rules = [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->userId)],
@@ -119,20 +100,15 @@ class Form extends Component
             'isActive' => ['boolean'], 'role' => ['required', Rule::in($allowedRoles)],
             'extraRoles' => ['array'], 'extraRoles.*' => ['string', 'distinct', Rule::in($allowedExtras)],
             'permissions' => ['array'], 'permissions.*' => ['string', 'distinct', Rule::in($registry->catalogue())],
+            'companyIds' => ['array'], 'companyIds.*' => ['integer', 'distinct', Rule::in($visibleCompanyIds)],
         ];
-        if ($this->employee) {
-            $rules += [
-                'employeeCode' => ['required', 'string', 'max:80', Rule::unique('employees', 'employee_code')->ignore($existing?->employee?->id)],
-                'jobTitle' => ['nullable', 'string', 'max:255'], 'department' => ['nullable', 'string', 'max:255'], 'phone' => ['nullable', 'string', 'max:40'],
-            ];
-        }
-        $data = $this->validate($rules);
+        $data = $this->validate($rules, [], ['companyIds.*' => __('company')]);
         if ($existing?->is(auth()->user())) {
-            $this->addError('role', 'Ask another administrator to change your own access.');
+            $this->addError('role', __('Ask another administrator to change your own access.'));
 
             return null;
         }
-        DB::transaction(function () use ($data, $existing, $registry): void {
+        DB::transaction(function () use ($data, $existing, $registry, $visibleCompanyIds): void {
             $user = $existing ?? new User;
             $user->fill(['name' => $data['name'], 'email' => $data['email']]);
             if ($data['password'] !== '') {
@@ -143,16 +119,13 @@ class Form extends Component
                 $user->denied_permissions = array_values(array_diff($registry->roleCeiling($data['role'], $data['extraRoles']), $data['permissions']));
             }
             $user->save();
-            if ($this->employee) {
-                Employee::updateOrCreate(['user_id' => $user->id], [
-                    'employee_code' => $data['employeeCode'], 'job_title' => $data['jobTitle'] ?: null,
-                    'department' => $data['department'] ?: null, 'phone' => $data['phone'] ?: null,
-                ]);
-            }
+            // Only assignments the actor can see are changed; the others are preserved.
+            $preserved = $user->companies()->whereNotIn('companies.id', $visibleCompanyIds)->pluck('companies.id')->all();
+            $user->companies()->sync([...$preserved, ...array_map('intval', $data['companyIds'])]);
         });
-        session()->flash('success', 'Account saved.');
+        session()->flash('success', __('Account saved.'));
 
-        return redirect()->route('admin.'.$this->module().'.index');
+        return redirect()->route('admin.users.index');
     }
 
     public function render(): View
@@ -160,8 +133,9 @@ class Form extends Component
         $registry = app(Permissions::class);
 
         return view('livewire.admin.users.form', ['registry' => $registry,
-            'roleOptions' => collect($registry->assignableRoles())->mapWithKeys(fn (string $role): array => [$role => $registry->label($role).($registry->isActive($role) ? '' : ' (disabled)')])->all(),
+            'roleOptions' => collect($registry->assignableRoles())->mapWithKeys(fn (string $role): array => [$role => $registry->label($role).($registry->isActive($role) ? '' : ' '.__('(disabled)'))])->all(),
             'ceiling' => $registry->roleCeiling($this->role, $this->extraRoles),
+            'companies' => Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']),
         ])->layout('layouts.admin');
     }
 }

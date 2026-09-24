@@ -62,3 +62,49 @@ td { border-top: 1px solid var(--line); padding: 17px 16px; vertical-align: midd
 .spacer { margin-top: 24px; }
 @media(max-width:900px) { .shell { grid-template-columns: minmax(0,1fr); } .sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 18px 20px; } .nav { display: flex; overflow-x: auto; margin-top: 16px; } .nav a { white-space: nowrap; } .content,.topbar { padding: 22px; } .stats { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width:600px) { .form-grid,.permission-grid { grid-template-columns: 1fr; } .page-header { align-items: start; flex-direction: column; } .panel { padding: 18px; } .topbar .muted { display: none; } h1 { font-size: 25px; } }
+/* Reports and dashboard. Chart series colours: validated categorical pair (blue, orange) on the light surface. */
+:root { --series-income: #2a78d6; --series-expense: #eb6834; }
+.badge-danger { background: #fdecea; color: var(--danger); }
+.report-card { display: grid; gap: 8px; }
+.report-card:hover { border-color: var(--accent); }
+.report-card h2 { margin: 0; color: var(--accent); }
+.report-table th[scope=row], .report-table th[scope=rowgroup] { font-size: 14px; color: var(--text); background: none; border-top: 1px solid var(--line); text-align: left; }
+.report-table td, .report-table th { padding: 12px 16px; }
+.section-row th, .report-table .section-row th { background: var(--canvas); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.row-label { font-weight: 500; }
+.total-row th, .total-row td { font-weight: 650; }
+.grand-total-row th, .grand-total-row td { font-weight: 700; border-top: 2px solid var(--text); }
+.dashboard-filter { min-width: 240px; }
+.dashboard-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.chart { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px 12px; margin-top: 8px; }
+.chart-axis { position: relative; height: 200px; min-width: 64px; font-size: 12px; color: var(--muted); }
+.chart-axis span { position: absolute; right: 0; transform: translateY(50%); white-space: nowrap; }
+.chart-plot { position: relative; height: 200px; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); border-bottom: 1px solid var(--line); }
+.chart-grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); }
+.chart-group { position: relative; display: flex; justify-content: center; align-items: flex-end; gap: 2px; height: 100%; }
+.chart-bar { width: min(24px,35%); border-radius: 4px 4px 0 0; }
+.chart-income { background: var(--series-income); }
+.chart-expense { background: var(--series-expense); }
+.chart-labels { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); text-align: center; font-size: 12px; color: var(--muted); }
+.chart-legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); }
+.chart-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+@media(max-width:900px) { .dashboard-columns { grid-template-columns: minmax(0,1fr); } }
+@media(max-width:600px) { .dashboard-filter { min-width: 0; width: 100%; } }
+@media print {
+    .sidebar, .topbar, .no-print { display: none !important; }
+    .shell { display: block; }
+    body { background: #fff; }
+    .content { max-width: none; padding: 0; }
+    .panel { border: 0; padding: 0; }
+    .page-header { margin-bottom: 16px; }
+    .table-wrap { overflow: visible; }
+    .report-table td, .report-table th { padding: 6px 8px; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+    a { color: inherit; }
+}
+.due-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; }
+.due-stats .stat-value { margin-top: 4px; }
+.table-caption { text-align: left; font-size: 13px; font-weight: 650; padding-bottom: 8px; }
+@media(max-width:600px) { .due-stats { grid-template-columns: minmax(0,1fr); } }

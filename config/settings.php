@@ -1,3 +1,3 @@
 <?php
 
-return ['app_name' => 'Full Stack Starter', 'support_email' => '', 'registration_enabled' => true];
+return ['app_name' => 'Frish Accounts', 'support_email' => '', 'registration_enabled' => false];

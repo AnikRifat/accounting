@@ -25,13 +25,13 @@ class Index extends Component
         $service->store($this->file, auth()->user(), $this->collection, auth()->user());
         $this->reset('file');
         $this->resetPage();
-        session()->flash('success', 'File uploaded.');
+        session()->flash('success', __('File uploaded.'));
     }
 
     public function delete(int $id, MediaService $service): void
     {
         $service->delete(Media::findOrFail($id), auth()->user());
-        session()->flash('success', 'File deleted. Its tracking record has been retained.');
+        session()->flash('success', __('File deleted. Its tracking record has been retained.'));
     }
 
     public function render(): View

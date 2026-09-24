@@ -3,22 +3,35 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $appSettings['app_name'] }} · Admin</title>
+    <title>{{ $appSettings['app_name'] }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js']) @livewireStyles
 </head>
 <body>
-<a class="sr-only focus:not-sr-only" href="#main">Skip to content</a>
+<a class="sr-only focus:not-sr-only" href="#main">{{ __('Skip to content') }}</a>
 <div class="shell">
     <aside class="sidebar">
-        <a class="brand" href="{{ route('admin.dashboard') }}"><span class="brand-mark">S</span> {{ $appSettings['app_name'] }}</a>
-        <nav class="nav" aria-label="Administration">
-            @foreach(['dashboard' => ['dashboard.view', 'Overview'], 'users.index' => ['users.view', 'Users'], 'employees.index' => ['employees.view', 'Employees'], 'roles.index' => ['roles.view', 'Roles & permissions'], 'media' => ['media.view', 'Media library'], 'settings' => ['settings.view', 'Settings']] as $key => [$ability, $label])
+        <a class="brand" href="{{ route('admin.dashboard') }}"><span class="brand-mark">F</span> {{ $appSettings['app_name'] }}</a>
+        <nav class="nav" aria-label="{{ __('Main navigation') }}">
+            @foreach([
+                'dashboard' => ['dashboard.view', __('Overview')],
+                'entries.index' => ['entries.view', __('Transactions')],
+                'reports.index' => ['reports.view', __('Reports')],
+                'parties.index' => ['parties.view', __('Parties')],
+                'categories.index' => ['accounts.view', __('Categories')],
+                'payment-methods.index' => ['accounts.view', __('Payment methods')],
+                'companies.index' => ['companies.view', __('Companies')],
+                'employees.index' => ['employees.view', __('Employees')],
+                'users.index' => ['users.view', __('Users')],
+                'roles.index' => ['roles.view', __('Roles & permissions')],
+                'media' => ['media.view', __('Media library')],
+                'settings' => ['settings.view', __('Settings')],
+            ] as $key => [$ability, $label])
                 @can($ability)<a href="{{ route('admin.'.$key) }}" @if(request()->routeIs('admin.'.explode('.', $key)[0].'*')) aria-current="page" @endif wire:navigate>{{ $label }}</a>@endcan
             @endforeach
         </nav>
     </aside>
     <div>
-        <header class="topbar"><span class="muted">Administration workspace</span><div class="flex items-center gap-4"><span class="text-sm font-semibold">{{ auth()->user()->name }}</span><form method="post" action="{{ route('logout') }}">@csrf <button class="btn btn-secondary" type="submit">Sign out</button></form></div></header>
+        <header class="topbar"><span class="muted">{{ __('Accounts workspace') }}</span><div class="flex items-center gap-4"><span class="text-sm font-semibold">{{ auth()->user()->name }}</span><form method="post" action="{{ route('logout') }}">@csrf <button class="btn btn-secondary" type="submit">{{ __('Sign out') }}</button></form></div></header>
         <main id="main" class="content">
             {{ $slot }}
         </main>

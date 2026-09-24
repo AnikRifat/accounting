@@ -34,7 +34,7 @@ class Settings extends Component
                 ApplicationSetting::updateOrCreate(['key' => $key], ['value' => $value]);
             }
         });
-        session()->flash('success', 'Application settings saved.');
+        session()->flash('success', __('Application settings saved.'));
     }
 
     public function render(): View

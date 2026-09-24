@@ -19,10 +19,10 @@ class PermissionsTest extends TestCase
     public function test_primary_and_extra_system_roles_form_a_union_minus_personal_denials(): void
     {
         RolePermission::factory()->create(['role' => 'reviewer', 'permissions' => ['users.view']]);
-        $user = User::factory()->create(['role' => 'reviewer', 'extra_roles' => ['employee'], 'denied_permissions' => ['media.upload']]);
+        $user = User::factory()->create(['role' => 'reviewer', 'extra_roles' => ['data-entry'], 'denied_permissions' => ['entries.create']]);
         $this->assertTrue(Gate::forUser($user)->allows('users.view'));
         $this->assertTrue(Gate::forUser($user)->allows('dashboard.view'));
-        $this->assertFalse(Gate::forUser($user)->allows('media.upload'));
+        $this->assertFalse(Gate::forUser($user)->allows('entries.create'));
         $this->assertFalse(Gate::forUser($user)->allows('users.update'));
     }
 
@@ -58,10 +58,10 @@ class PermissionsTest extends TestCase
     public function test_system_roles_are_immutable_but_can_be_disabled_without_revoking_existing_holders(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class, ['role' => 'employee'])->set('permissions', [])->call('save')->assertHasErrors('label');
-        Livewire::test(Form::class, ['role' => 'employee'])->set('isActive', false)->call('save')->assertHasNoErrors();
-        $this->assertNotContains('employee', app(Permissions::class)->enabledRoles());
-        $existingHolder = User::factory()->create(['role' => 'employee']);
+        Livewire::test(Form::class, ['role' => 'data-entry'])->set('permissions', [])->call('save')->assertHasErrors('label');
+        Livewire::test(Form::class, ['role' => 'data-entry'])->set('isActive', false)->call('save')->assertHasNoErrors();
+        $this->assertNotContains('data-entry', app(Permissions::class)->enabledRoles());
+        $existingHolder = User::factory()->create(['role' => 'data-entry']);
         $this->assertTrue($existingHolder->hasPermission('dashboard.view'));
     }
 

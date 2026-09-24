@@ -8,6 +8,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // System roles come from config. Create the owner with app:create-admin.
+        $this->call([
+            DemoSeeder::class,
+        ]);
     }
 }

@@ -1,18 +1,54 @@
-# Backend project rules
+# Frish Accounts
 
-Read `../AGENTS.md` and `../docs/architecture.md`. Laravel owns data and authorization; Livewire uses class components under `app/Livewire` with `layouts.admin` / `layouts.guest`. Every form control uses `x-form.*` components. Design values are centralized in `resources/css/app.css`.
+Multi-company income and expense accounting for one Bangladeshi business owner (BDT), built as the
+first module of a future ERP. Double-entry ledger underneath simple income, expense and transfer
+forms. Decisions, data contracts, posting rules and acceptance criteria: `docs/delivery-plan.md`.
+Read it before changing ledger, access or money code.
 
-Use `App\Support\Permissions`, not Spatie or a second role implementation. System role names/grants are fixed in config. `role_permissions` contains custom roles and system assignment flags. Owner cannot be assigned or edited from admin. Personal denials only subtract from primary/extra system-role grants. See `../docs/permissions.md`.
+## Stack and hosting
 
-All permanent storage/URLs/deletion/replacement uses `App\Services\MediaService`. Owner models use `App\Concerns\HasMedia`. Secrets stay in environment/config files. See `../docs/media.md`.
+Laravel 13, Livewire 4 (class components in `app/Livewire`, `layouts.admin` / `layouts.guest`,
+form controls via `x-form.*`), Tailwind 4 via Vite, PHPUnit. Started from the house starter's
+backend (`~/Development/boilarplate`), without its Next.js frontend. Production target is **cPanel
+shared hosting with MySQL/MariaDB**: no Node, queue worker or long-running process at runtime, so
+assets are built before upload. Local development defaults to SQLite, and the code must stay
+portable (no DB-specific SQL; MySQL runs with `ONLY_FULL_GROUP_BY`). Timezone `Asia/Dhaka`; MySQL
+session timezone `+06:00`.
 
-Checks: `composer check`, `php artisan test --compact`, `vendor/bin/pint`, `npm run build`. PHPUnit tests use isolated SQLite; never run destructive migration commands against a real project database. Composer's PHP platform is pinned to 8.3 for portable dependency resolution.
+## Invariants (do not break)
 
-Backend/API changes must preserve the frontend contracts. Administrative management is Livewire; versioned API endpoints are auth/profile/configuration/media. Hosting is unspecified; no payment, external broker or domain queue is present. Boost MCP is configured locally but availability must be verified in the host.
+- **Money** is integer paisa in `BIGINT` columns. Use `App\Support\Money` for input, edit values
+  and display (৳, lakh/crore grouping). Never use floats. The maximum is 11 taka digits.
+- **Ledger writes** go only through `App\Services\LedgerService` (record, recordOpening, update,
+  void). Every entry has exactly one debit and one credit line of the same amount. Entries are
+  never deleted, only voided with a reason. Voided entries are excluded via `JournalEntry::posted()`
+  everywhere figures are computed. Numbers are `<COMPANY CODE>-000001` per company, generated under
+  a company row lock.
+- **Company isolation**: every query and write that touches company data is scoped with
+  `Company::visibleTo()`, `Model::visibleTo()`, `$user->accessibleCompanyIds()` or
+  `canAccessCompany()`, and re-checked server-side on save. `companies.all` (owner, administrator)
+  sees everything. Unique validation rules must never run against a company the user can't access.
+  User management without `companies.all` goes through `Users\ManageableUsers`.
+- **Inactive companies** accept no new entries, accounts or employees. They stay in reports.
+- **Roles and permissions** use `App\Support\Permissions` and `config/permissions.php`, not Spatie.
+  System roles: owner, administrator, accountant, data-entry, member (API only).
+- **UI text** is English and every user-facing string goes through `__()` with the English text
+  as key, so `lang/bn.json` can be added later without code changes.
+- Public API self-registration is off by default (`config/settings.php`). The starter's `/api/v1`
+  and media code are kept for the future ERP and are unused by the accounting UI.
+
+## Commands
+
+- Setup: `composer install && cp .env.example .env && php artisan key:generate && php artisan migrate && npm ci && npm run build`
+- Owner account: `php artisan app:create-admin` (interactive; no default password exists)
+- Demo data (local only, refuses in production): `composer demo`
+- Checks: `composer check` (Pint + tests), `php artisan test --compact`, `npm run build`
+- Tests use in-memory SQLite. Never run `migrate:fresh` or tests against a real database.
 
 ## gstack
 
-Use `/browse` from gstack for all web browsing; never use `mcp__claude-in-chrome__*`. Global available workflow skills and engineering routing are listed in `../AGENTS.md`.
+Use `/browse` from gstack for all web browsing; never use `mcp__claude-in-chrome__*`. Global
+workflow skills and engineering routing are listed in `~/.claude/CLAUDE.md`.
 
 <laravel-boost-guidelines>
 === foundation rules ===

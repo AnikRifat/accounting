@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ApplicationSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -12,8 +13,15 @@ class ApiAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_registration_is_refused_by_default(): void
+    {
+        $this->postJson('/api/v1/auth/register', ['name' => 'Member', 'email' => 'member@example.test', 'password' => 'StrongPass12345', 'password_confirmation' => 'StrongPass12345'])->assertForbidden();
+        $this->assertDatabaseCount('users', 0);
+    }
+
     public function test_registration_ignores_privileged_attributes_and_issues_an_expiring_token(): void
     {
+        $this->enableRegistration();
         $this->travelTo(now()->startOfSecond());
         $response = $this->postJson('/api/v1/auth/register', [
             'name' => 'New Member', 'email' => 'MEMBER@example.test', 'password' => 'StrongPass12345',
@@ -71,6 +79,7 @@ class ApiAuthenticationTest extends TestCase
     public function test_anonymous_requests_return_json_401_and_invalid_registration_returns_422(): void
     {
         $this->getJson('/api/v1/me')->assertUnauthorized();
+        $this->enableRegistration();
         $this->postJson('/api/v1/auth/register', [])->assertUnprocessable()->assertJsonValidationErrors(['name', 'email', 'password']);
     }
 
@@ -80,5 +89,10 @@ class ApiAuthenticationTest extends TestCase
             $this->postJson('/api/v1/auth/login', ['email' => 'unknown@example.test', 'password' => 'wrong'])->assertUnprocessable();
         }
         $this->postJson('/api/v1/auth/login', ['email' => 'unknown@example.test', 'password' => 'wrong'])->assertTooManyRequests();
+    }
+
+    private function enableRegistration(): void
+    {
+        ApplicationSetting::create(['key' => 'registration_enabled', 'value' => true]);
     }
 }

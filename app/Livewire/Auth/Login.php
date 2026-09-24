@@ -24,14 +24,14 @@ class Login extends Component
         $data = $this->validate(['email' => ['required', 'email', 'max:255'], 'password' => ['required', 'string', 'max:255']]);
         $key = 'admin-login:'.hash('sha256', $this->email.'|'.request()->ip());
         if (RateLimiter::tooManyAttempts($key, 5)) {
-            $this->addError('email', 'Too many attempts. Try again in '.RateLimiter::availableIn($key).' seconds.');
+            $this->addError('email', __('Too many attempts. Try again in :seconds seconds.', ['seconds' => RateLimiter::availableIn($key)]));
 
             return null;
         }
         if (! Auth::attempt([...$data, 'is_active' => true], $this->remember) || ! Gate::allows('admin.access')) {
             Auth::logout();
             RateLimiter::hit($key, 60);
-            $this->addError('email', 'The provided credentials are incorrect or admin access is unavailable.');
+            $this->addError('email', __('The provided credentials are incorrect or admin access is unavailable.'));
 
             return null;
         }

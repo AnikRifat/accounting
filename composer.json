@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "starter/backend",
+    "name": "frish/accounts",
     "type": "project",
-    "description": "Generic Laravel API and Livewire administration starter.",
+    "description": "Frish Accounts: multi-company income and expense accounting (double-entry, BDT).",
     "keywords": [
         "laravel",
         "framework"
@@ -72,6 +72,7 @@
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
         ],
+        "demo": "@php artisan db:seed --class=DemoSeeder",
         "lint": "@php vendor/bin/pint --test",
         "check": [
             "@lint",
