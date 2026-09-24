@@ -7,7 +7,6 @@ use App\Enums\EntryType;
 use App\Enums\PaymentType;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\User;
@@ -95,6 +94,9 @@ class DemoSeeder extends Seeder
 
     private CarbonImmutable $today;
 
+    /** The one demo password every seeded account signs in with. */
+    private string $password;
+
     /** @throws RuntimeException when not local/testing or when the books are not empty; nothing is written then */
     public function run(LedgerService $ledger): void
     {
@@ -106,7 +108,7 @@ class DemoSeeder extends Seeder
         }
         $this->ledger = $ledger;
         $this->today = CarbonImmutable::today();
-        $password = Str::password(16, symbols: false);
+        $password = 'password';
         $summary = DB::transaction(fn (): array => $this->seedDemo($password));
 
         $this->command?->info("Demo data created: {$summary['companies']} companies, {$summary['parties']} parties, {$summary['entries']} entries "
@@ -121,6 +123,7 @@ class DemoSeeder extends Seeder
     /** @return array{companies: int, parties: int, entries: int, open: int, overdue: int, settled: int} */
     private function seedDemo(string $password): array
     {
+        $this->password = $password;
         $this->owner = $this->user('Super Admin', self::OWNER_EMAIL, 'owner', $password);
         $start = $this->today->startOfMonth()->subMonthsNoOverflow(self::MONTHS - 1);
         $companies = [];
@@ -129,8 +132,8 @@ class DemoSeeder extends Seeder
         }
         $this->voidSamples($companies['MTL'], $companies['JSL']);
 
-        $this->user('Rafia Chowdhury', self::ACCOUNTANT_EMAIL, 'accountant', $password)->companies()->attach([$companies['MTL']->id, $companies['JSL']->id]);
-        $this->user('Habib Rahman', self::DATA_ENTRY_EMAIL, 'data-entry', $password)->companies()->attach($companies['SKR']->id);
+        $this->user('Rafia Chowdhury', self::ACCOUNTANT_EMAIL, 'accountant', $password, [$companies['MTL']->id, $companies['JSL']->id]);
+        $this->user('Habib Rahman', self::DATA_ENTRY_EMAIL, 'data-entry', $password, [$companies['SKR']->id]);
 
         $ids = array_map(fn (Company $company): int => $company->id, $companies);
         $today = $this->today->toDateString();
@@ -142,10 +145,18 @@ class DemoSeeder extends Seeder
             'settled' => JournalEntry::query()->whereIn('company_id', $ids)->posted()->whereHas('settlements', fn ($query) => $query->posted())->count()];
     }
 
-    private function user(string $name, string $email, string $role, string $password): User
+    /**
+     * Every user but the super admin is an employee with a party in each assigned company.
+     *
+     * @param  list<int>  $companyIds
+     * @param  array<string, mixed>  $staff  employee details (code, designation, department, phone, salary, joining date)
+     */
+    private function user(string $name, string $email, string $role, string $password, array $companyIds = [], array $staff = []): User
     {
         $user = new User(['name' => $name, 'email' => $email, 'password' => $password]);
-        $user->forceFill(['role' => $role, 'is_active' => true, 'email_verified_at' => now()])->save();
+        $user->forceFill(['role' => $role, 'is_active' => true, 'email_verified_at' => now(), ...$staff])->save();
+        $user->companies()->attach($companyIds);
+        $user->syncParties();
 
         return $user;
     }
@@ -176,10 +187,11 @@ class DemoSeeder extends Seeder
         $landlord = $party($definition['landlord'], 'Landlord');
         $staff = [];
         foreach ($definition['staff'] as $index => [$name, $designation, $department, $salary]) {
-            $employee = Employee::create(['company_id' => $company->id, 'employee_code' => sprintf('EMP-%03d', $index + 1), 'name' => $name,
-                'designation' => $designation, 'department' => $department, 'phone' => sprintf('01711-%06d', $random->getInt(100000, 999999)),
-                'monthly_salary' => $salary * 100, 'joined_on' => $start->subMonths($random->getInt(3, 48))->toDateString(), 'is_active' => true]);
-            $staff[] = [(int) $employee->party()->value('id'), $salary];
+            $employee = $this->user($name, Str::slug($name, '.').'@frish.test', 'data-entry', $this->password, [$company->id], [
+                'employee_code' => sprintf('%s-%03d', $company->code, $index + 1), 'designation' => $designation, 'department' => $department,
+                'phone' => sprintf('01711-%06d', $random->getInt(100000, 999999)), 'monthly_salary' => $salary * 100,
+                'joined_on' => $start->subMonths($random->getInt(3, 48))->toDateString()]);
+            $staff[] = [(int) $employee->parties()->value('id'), $salary];
         }
 
         foreach ([$cash, ...$banks, ...$wallets] as $index => $methodId) {
@@ -320,7 +332,7 @@ class DemoSeeder extends Seeder
         $date = $this->today->subDays(2);
         $category = fn (Company $company, string $name): int => (int) $company->accounts()->where('name', $name)->value('id');
         $bank = fn (Company $company): int => (int) $company->accounts()->where('name', 'Bank Account')->value('id');
-        $customer = (int) Party::query()->where('company_id', $trading->id)->whereNull('employee_id')->orderBy('id')->value('id');
+        $customer = (int) Party::query()->where('company_id', $trading->id)->whereNull('user_id')->orderBy('id')->value('id');
 
         $duplicate = $this->bill($trading, EntryType::Income, $date, 2_50_000_00, $category($trading, 'Sales & Service Income'), $bank($trading), $customer, 'Invoice for goods and services', reference: 'INV-MTL-DUP');
         $this->ledger->void($duplicate, 'Duplicate entry; the payment was already recorded.', $this->owner);

@@ -5,10 +5,11 @@ namespace App\Livewire\Admin;
 use App\Enums\EntryType;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\JournalEntry;
+use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\Permissions;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -19,7 +20,7 @@ use Livewire\Component;
 
 /**
  * Accounting overview for the header company context: one company, or every visible company combined. Figures follow the viewer's abilities:
- * income, expense and dues need `entries.view`, payment method balances `accounts.view`, the head count `employees.view`.
+ * income, expense and dues need `entries.view`, payment method balances `accounts.view`, the head count `users.view`.
  */
 class Dashboard extends Component
 {
@@ -29,7 +30,6 @@ class Dashboard extends Component
     public function render(): View
     {
         Gate::authorize('dashboard.view');
-        $user = auth()->user();
         $context = app(CompanyContext::class);
         if ($context->options()->isEmpty()) {
             return view('livewire.admin.dashboard', ['hasCompanies' => false])->layout('layouts.admin');
@@ -49,8 +49,8 @@ class Dashboard extends Component
                 ->orderByDesc('entry_date')->orderByDesc('id')->limit(10)->get() : null,
             'dues' => $showEntries ? $this->dueSummary($companyIds) : null,
             'cash' => Gate::allows('accounts.view') ? $this->cashBalances($context->options()->whereIn('id', $companyIds)) : null,
-            'activeEmployees' => Gate::allows('employees.view')
-                ? Employee::visibleTo($user)->whereIn('company_id', $companyIds)->where('is_active', true)->count() : null,
+            'activeEmployees' => Gate::allows('users.view') ? User::query()->where('role', '!=', Permissions::ROOT_ROLE)->where('is_active', true)
+                ->whereHas('companies', fn ($companies) => $companies->whereIn('companies.id', $companyIds))->count() : null,
         ])->layout('layouts.admin');
     }
 

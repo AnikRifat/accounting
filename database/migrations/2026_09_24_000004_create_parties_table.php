@@ -11,13 +11,15 @@ return new class extends Migration
         Schema::create('parties', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('company_id')->index()->constrained();
-            $table->foreignId('employee_id')->nullable()->unique()->constrained()->restrictOnDelete();
+            $table->foreignId('user_id')->nullable()->constrained()->restrictOnDelete();
             $table->string('name', 150);
             $table->string('phone', 40)->nullable();
             $table->string('address')->nullable();
             $table->string('notes', 500)->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+            // One party per employee (user) per company; custom parties have no user.
+            $table->unique(['company_id', 'user_id']);
         });
     }
 

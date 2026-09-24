@@ -35,8 +35,8 @@ class Index extends Component
         return view('livewire.admin.parties.index', [
             'showCompany' => $context->isAll(),
             'parties' => Party::query()->whereIn('company_id', $context->companyIds())->with('company')
-                ->when($this->kind === 'employee', fn ($query) => $query->whereNotNull('employee_id'))
-                ->when($this->kind === 'custom', fn ($query) => $query->whereNull('employee_id'))
+                ->when($this->kind === 'employee', fn ($query) => $query->whereNotNull('user_id'))
+                ->when($this->kind === 'custom', fn ($query) => $query->whereNull('user_id'))
                 ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))
                 ->when($search !== '', fn ($query) => $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')->orWhere('phone', 'like', '%'.$search.'%')))
                 ->orderBy('name')->paginate(15),

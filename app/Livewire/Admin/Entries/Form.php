@@ -338,13 +338,13 @@ class Form extends Component
             return ['' => __('No party')];
         }
         $parties = Party::query()->where('company_id', $companyId)->where('is_active', true)
-            ->orderBy('name')->get(['id', 'name', 'phone', 'employee_id']);
+            ->orderBy('name')->get(['id', 'name', 'phone', 'user_id']);
         if ($this->partyId !== '' && ! $parties->contains('id', (int) $this->partyId)) {
-            $parties->prepend(Party::query()->where('company_id', $companyId)->find((int) $this->partyId, ['id', 'name', 'phone', 'employee_id']));
+            $parties->prepend(Party::query()->where('company_id', $companyId)->find((int) $this->partyId, ['id', 'name', 'phone', 'user_id']));
         }
 
         return ['' => __('No party')] + $parties->filter()->mapWithKeys(fn (Party $party): array => [
-            $party->id => $party->name.($party->phone ? ' · '.$party->phone : '').($party->employee_id ? ' · '.__('employee') : ''),
+            $party->id => $party->name.($party->phone ? ' · '.$party->phone : '').($party->user_id ? ' · '.__('employee') : ''),
         ])->all();
     }
 

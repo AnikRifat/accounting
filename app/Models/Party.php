@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Who paid, received or was spent on. Employee parties are created and kept in sync by
- * App\Models\Employee; `employee_id` is deliberately not fillable.
+ * Who paid, received or was spent on. Employee parties belong to a user and are created and kept in
+ * sync by User::syncParties(); `user_id` is deliberately not fillable.
  */
 #[Fillable(['company_id', 'name', 'phone', 'address', 'notes', 'is_active'])]
 class Party extends Model
@@ -31,14 +31,15 @@ class Party extends Model
         return $this->belongsTo(Company::class);
     }
 
-    public function employee(): BelongsTo
+    /** The employee this party stands for. */
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Employee::class);
+        return $this->belongsTo(User::class);
     }
 
     public function isEmployee(): bool
     {
-        return $this->employee_id !== null;
+        return $this->user_id !== null;
     }
 
     /** Parties of the companies the user may access. */

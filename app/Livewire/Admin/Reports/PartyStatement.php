@@ -43,7 +43,7 @@ class PartyStatement extends Component
         Gate::authorize('parties.view');
         $context = app(CompanyContext::class);
         $company = $context->isAll() ? null : $context->company();
-        $parties = $company ? Party::query()->where('company_id', $company->id)->orderBy('name')->get(['id', 'company_id', 'name', 'phone', 'employee_id']) : collect();
+        $parties = $company ? Party::query()->where('company_id', $company->id)->orderBy('name')->get(['id', 'company_id', 'name', 'phone', 'user_id']) : collect();
         $party = $parties->firstWhere('id', (int) $this->party);
         $this->party = (string) $party?->id;
         $range = $this->resolvePeriod();

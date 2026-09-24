@@ -23,21 +23,21 @@ class EmployeeCost extends Component
     public function render(): View
     {
         Gate::authorize('reports.view');
-        Gate::authorize('employees.view');
+        Gate::authorize('users.view');
         $context = app(CompanyContext::class);
         $companyIds = $context->companyIds();
         $range = $this->resolvePeriod();
 
         $rows = collect();
         if ($range !== null && $companyIds !== []) {
-            $employeeParties = Party::query()->whereIn('company_id', $companyIds)->whereNotNull('employee_id')->select('id');
+            $employeeParties = Party::query()->whereIn('company_id', $companyIds)->whereNotNull('user_id')->select('id');
             $bills = JournalEntry::query()->posted()->where('type', EntryType::Expense)->whereIn('company_id', $companyIds)
                 ->whereIn('party_id', $employeeParties)->whereBetween('entry_date', $range)->withOutstanding();
             $totals = DB::query()->fromSub($bills, 'bills')->groupBy('party_id')
                 ->selectRaw('party_id, SUM(amount) as total, SUM(outstanding) as outstanding, COUNT(*) as entry_count')
                 ->orderByDesc('total')->orderBy('party_id')->get();
             $parties = Party::query()->whereIn('company_id', $companyIds)->whereKey($totals->pluck('party_id'))
-                ->with(['company:id,name,code', 'employee:id,employee_code,designation'])->get()->keyBy('id');
+                ->with(['company:id,name,code', 'user:id,employee_code,designation'])->get()->keyBy('id');
             $rows = $totals->filter(fn (object $total): bool => $parties->has($total->party_id))->map(fn (object $total): array => [
                 'party' => $parties[$total->party_id], 'total' => (int) $total->total, 'outstanding' => (int) $total->outstanding,
                 'paid' => (int) $total->total - (int) $total->outstanding, 'count' => (int) $total->entry_count,

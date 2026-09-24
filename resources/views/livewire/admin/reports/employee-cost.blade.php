@@ -19,7 +19,7 @@
                 <tbody>
                     @foreach($rows as $row)
                         <tr wire:key="employee-party-{{ $row['party']->id }}">
-                            <th scope="row" class="row-label">{{ $row['party']->name }}<p class="muted">{{ $row['party']->employee?->employee_code }}@if($row['party']->employee?->designation) · {{ $row['party']->employee->designation }}@endif</p></th>
+                            <th scope="row" class="row-label">{{ $row['party']->name }}<p class="muted">{{ $row['party']->user?->employee_code }}@if($row['party']->user?->designation)@if($row['party']->user->employee_code) · @endif{{ $row['party']->user->designation }}@endif</p></th>
                             @if($consolidated)<td>{{ $row['party']->company->name }}</td>@endif
                             <td class="text-right tabular-nums">{{ $row['count'] }}</td>
                             <td class="text-right tabular-nums whitespace-nowrap">{{ \App\Support\Money::format($row['total']) }}</td>

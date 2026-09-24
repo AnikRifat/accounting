@@ -5,7 +5,7 @@
         <div class="panel stack empty-state">
             @can('companies.create')
                 <h2>{{ __('Create your first company') }}</h2>
-                <p class="muted">{{ __('Each company gets its own chart of accounts, cash and bank accounts and employees. Add one to start recording income and expenses.') }}</p>
+                <p class="muted">{{ __('Each company gets its own chart of accounts, cash and bank accounts and parties. Add one to start recording income and expenses.') }}</p>
                 <div><a class="btn" href="{{ route('admin.companies.create') }}" wire:navigate>{{ __('Create a company') }}</a></div>
             @else
                 <h2>{{ __('No company assigned yet') }}</h2>

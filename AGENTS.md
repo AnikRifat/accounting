@@ -20,7 +20,7 @@ session timezone `+06:00`.
 - **Money** is integer paisa in `BIGINT` columns. Use `App\Support\Money` for input, edit values
   and display (৳, lakh/crore grouping). Never use floats. The maximum is 11 taka digits.
 - **Ledger writes** go only through `App\Services\LedgerService` (record, recordOpening, update,
-  void). Every entry has exactly one debit and one credit line of the same amount. Entries are
+  settle, void). Every entry has 2–3 one-sided lines that balance exactly. Entries are
   never deleted, only voided with a reason. Voided entries are excluded via `JournalEntry::posted()`
   everywhere figures are computed. Numbers are `<COMPANY CODE>-000001` per company, generated under
   a company row lock.
@@ -29,7 +29,16 @@ session timezone `+06:00`.
   `canAccessCompany()`, and re-checked server-side on save. `companies.all` (owner, administrator)
   sees everything. Unique validation rules must never run against a company the user can't access.
   User management without `companies.all` goes through `Users\ManageableUsers`.
-- **Inactive companies** accept no new entries, accounts or employees. They stay in reports.
+- **Company scope comes from the header** (`App\Support\CompanyContext`: `companyIds()`, `company()`,
+  `isAll()`). Pages never offer their own company filter or field. Create routes use the
+  `company.selected` middleware, and Livewire saves re-check the context company themselves, since
+  `/livewire/update` bypasses route middleware. Company ids in forms are `#[Locked]` and only
+  compared against the context.
+- **Dues** (accrual): income and expenses post in full. The unpaid part sits on Accounts
+  Receivable or Payable against a party, with a due date. `LedgerService::settle()` posts receipts
+  and payments against the bill. Outstanding amounts are always derived, never stored. A bill with
+  settlements can't be voided.
+- **Inactive companies** accept no new entries, accounts or parties. They stay in reports.
 - **Roles and permissions** use `App\Support\Permissions` and `config/permissions.php`, not Spatie.
   System roles: owner, administrator, accountant, data-entry, member (API only).
 - **UI text** is English and every user-facing string goes through `__()` with the English text

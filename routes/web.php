@@ -10,8 +10,6 @@ use App\Livewire\Admin\ChooseCompany;
 use App\Livewire\Admin\Companies\Form as CompanyForm;
 use App\Livewire\Admin\Companies\Index as CompanyIndex;
 use App\Livewire\Admin\Dashboard;
-use App\Livewire\Admin\Employees\Form as EmployeeForm;
-use App\Livewire\Admin\Employees\Index as EmployeeIndex;
 use App\Livewire\Admin\Entries\Form as EntryForm;
 use App\Livewire\Admin\Entries\Index as EntryIndex;
 use App\Livewire\Admin\Entries\Settle as EntrySettle;
@@ -54,9 +52,6 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
     Route::livewire('/users', UserIndex::class)->middleware('can:users.view')->name('users.index');
     Route::livewire('/users/create', UserForm::class)->middleware('can:users.create')->name('users.create');
     Route::livewire('/users/{user}/edit', UserForm::class)->middleware('can:users.update')->name('users.edit');
-    Route::livewire('/employees', EmployeeIndex::class)->middleware('can:employees.view')->name('employees.index');
-    Route::livewire('/employees/create', EmployeeForm::class)->middleware(['can:employees.create', 'company.selected'])->name('employees.create');
-    Route::livewire('/employees/{employee}/edit', EmployeeForm::class)->middleware('can:employees.update')->name('employees.edit');
     Route::livewire('/companies', CompanyIndex::class)->middleware('can:companies.view')->name('companies.index');
     Route::livewire('/companies/create', CompanyForm::class)->middleware('can:companies.create')->name('companies.create');
     Route::livewire('/companies/{company}/edit', CompanyForm::class)->middleware('can:companies.update')->name('companies.edit');
@@ -77,7 +72,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
         Route::livewire('/reports/income-statement', IncomeStatement::class)->name('reports.income-statement');
         Route::livewire('/reports/account-ledger', AccountLedger::class)->name('reports.account-ledger');
         Route::livewire('/reports/trial-balance', TrialBalance::class)->name('reports.trial-balance');
-        Route::livewire('/reports/employee-cost', EmployeeCost::class)->middleware('can:employees.view')->name('reports.employee-cost');
+        Route::livewire('/reports/employee-cost', EmployeeCost::class)->middleware('can:users.view')->name('reports.employee-cost');
         Route::livewire('/reports/dues', Dues::class)->name('reports.dues');
         Route::livewire('/reports/party-statement', PartyStatement::class)->middleware('can:parties.view')->name('reports.party-statement');
     });

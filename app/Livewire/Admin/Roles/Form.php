@@ -56,12 +56,19 @@ class Form extends Component
             Gate::authorize('permissions.manage');
             RolePermission::updateOrCreate(['role' => $key], ['label' => trim($this->label), 'permissions' => $registry->sanitise($this->permissions), 'is_active' => $this->isActive]);
         } else {
-            if ($this->label !== $registry->label($key) || $this->permissions !== $registry->forRole($key)) {
-                $this->addError('label', __('System roles have fixed names and permissions. Create a custom role instead.'));
+            if ($this->label !== $registry->label($key)) {
+                $this->addError('label', __('System roles keep their names. Create a custom role for a different name.'));
 
                 return null;
             }
-            RolePermission::firstOrCreate(['role' => $key], ['permissions' => []])->update(['is_active' => $this->isActive]);
+            // A system role row stores null permissions until they are edited, so its config defaults apply.
+            $row = RolePermission::firstOrNew(['role' => $key]);
+            $permissions = $registry->sanitise($this->permissions);
+            if ($permissions !== $registry->forRole($key)) {
+                Gate::authorize('permissions.manage');
+                $row->permissions = $permissions;
+            }
+            $row->fill(['is_active' => $this->isActive])->save();
         }
         $registry->flush();
         session()->flash('success', __('Role saved.'));

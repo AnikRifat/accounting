@@ -36,7 +36,7 @@ class Form extends Component
         $this->partyId = $party?->exists ? $party->id : null;
         Gate::authorize($this->partyId ? 'parties.update' : 'parties.create');
         if ($this->partyId) {
-            // Employee parties change only through their employee.
+            // Employee parties change only through the employee's account.
             abort_unless(auth()->user()->canAccessCompany($party->company_id) && ! $party->isEmployee(), 404);
             $this->companyId = $party->company_id;
             $this->name = $party->name;
@@ -52,7 +52,7 @@ class Form extends Component
     public function save(): Redirector|RedirectResponse|null
     {
         Gate::authorize($this->partyId ? 'parties.update' : 'parties.create');
-        $existing = $this->partyId ? Party::visibleTo(auth()->user())->whereNull('employee_id')->findOrFail($this->partyId) : null;
+        $existing = $this->partyId ? Party::visibleTo(auth()->user())->whereNull('user_id')->findOrFail($this->partyId) : null;
         // A party stays in its company; a new one goes to the header company the page was opened for.
         $company = $existing?->company ?? $this->contextCompany();
         if (! $company) {

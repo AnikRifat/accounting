@@ -181,9 +181,9 @@ class JournalEntry extends Model
     }
 
     /**
-     * Applies list filters; malformed values are ignored. Combine with visibleTo() for scoping.
+     * Applies list filters; malformed values are ignored. Company scope comes from visibleTo() and CompanyContext, never from here.
      *
-     * @param  array{company?: mixed, from?: mixed, to?: mixed, type?: mixed, account?: mixed, party?: mixed, status?: mixed, search?: mixed}  $filters
+     * @param  array{from?: mixed, to?: mixed, type?: mixed, account?: mixed, party?: mixed, status?: mixed, search?: mixed}  $filters
      */
     public function scopeFilter(Builder $query, array $filters): void
     {
@@ -192,8 +192,7 @@ class JournalEntry extends Model
         $date = fn (string $key): ?string => preg_match('/^\d{4}-\d{2}-\d{2}$/', $value($key)) === 1 ? $value($key) : null;
         $search = mb_substr($value('search'), 0, 100);
 
-        $query->when($id('company'), fn (Builder $q, int $companyId) => $q->where('company_id', $companyId))
-            ->when($date('from'), fn (Builder $q, string $from) => $q->where('entry_date', '>=', $from))
+        $query->when($date('from'), fn (Builder $q, string $from) => $q->where('entry_date', '>=', $from))
             ->when($date('to'), fn (Builder $q, string $to) => $q->where('entry_date', '<=', $to))
             ->when(EntryType::tryFrom($value('type')), fn (Builder $q, EntryType $type) => $q->where('type', $type))
             ->when($id('account'), fn (Builder $q, int $accountId) => $q->whereHas('lines', fn (Builder $lines) => $lines->where('account_id', $accountId)))

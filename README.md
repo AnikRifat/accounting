@@ -12,12 +12,13 @@ Engineering rules for contributors and agents: [AGENTS.md](AGENTS.md).
 
 | Area | Features |
 | --- | --- |
-| Companies | Any number of companies, each with its own chart of accounts, created automatically from a default template. Inactive companies are closed to new entries but stay in reports. |
-| Chart of accounts | Income, expense, cash/bank and other accounts per company. Opening balances for cash and bank accounts. System accounts are protected, and an account's type is locked once it is used. |
-| Transactions | Record income, expense (optionally linked to an employee) and cash↔bank transfers. Per-company numbering (`MTL-000123`). Edit, or void with a reason; never delete. Filter by company, date, type, account, employee and text, and export to CSV (Excel-ready). |
-| Reports | Income statement for one company or all companies combined (one column per company plus a total), account ledger with running balance, trial balance, employee cost. Bangladesh fiscal-year presets (1 July–30 June). Printable. |
-| Dashboard | This month versus last month, cash and bank balances per company, a six-month income/expense chart, recent transactions. |
-| Employees | A basic list per company: code, name, designation, department, phone, monthly salary, joining date, active. |
+| Company switcher | One switcher in the header: **All companies** (combined figures) or a single company (only that company's data). No page has its own company filter. Creating a record while on All companies first asks which company. "+ New company" opens a side drawer. |
+| Companies | Any number of companies. Each gets its own books from a default template: Cash, Bank and bKash payment methods, income and expense categories, and receivable/payable accounts. Inactive companies take no new records but stay in reports. |
+| Transactions | Income and expense with a **category**, a **party** and a **payment method**. You enter the total and the amount paid now, and any unpaid rest gets a due date. Dues are paid off later in any number of receipts or payments. Statuses: Paid, Partly paid, Due, Overdue. Transfers between payment methods. Per-company numbering (`MTL-000123`). Entries are edited, or voided with a reason, never deleted. Filters, and a CSV export for Excel. |
+| Parties | Customers, suppliers and people per company. Employees are parties automatically. New parties and categories can be added from the entry form. |
+| Categories and payment methods | Managed without account codes, which are assigned automatically. On All companies, the category list is combined and a new category is added to every company. Payment methods (Cash, Bank, bKash/Nagad, card) have opening balances. |
+| Reports | Income statement (accrual: dues count in full on the entry date), dues (who owes you and whom you owe, with overdue items), party statement, account ledger, trial balance, employee cost, and the chart of accounts. Bangladesh fiscal-year presets (1 July–30 June). Printable. |
+| Dashboard | This month versus last month, receivable/payable/overdue totals and the next dues, cash position per payment method, a six-month income/expense chart, recent transactions. |
 | Access | Roles: owner, administrator, accountant, data-entry, plus custom roles with per-user denials. Users are assigned to companies, and user managers can't take over accounts with more power than their own. |
 
 Not included yet: attendance, leave, payroll processing, inter-company transfers, multi-currency,
@@ -47,18 +48,20 @@ The default `.env.example` uses SQLite. To use MySQL locally, set the `DB_*` var
 ### Demo data
 
 ```sh
-php artisan migrate:fresh --seed --seeder=DemoSeeder   # wipes the local database first
+php artisan migrate:fresh --seed   # wipes the local database, then DatabaseSeeder runs DemoSeeder
 ```
 
 This creates 4 companies (Meghna Traders, Padma Apparel Sourcing, Jamuna Soft, Shapla Kitchen)
-with about 6 months of transactions, 18 employees and three sign-ins:
+with about 6 months of transactions: parties, partial payments, open and overdue dues, and later
+settlements. It also creates three sign-ins:
 
 - owner `superadmin@gmail.com`
 - accountant `accountant@frish.test` (Meghna, Jamuna)
 - data-entry user `dataentry@frish.test` (Shapla)
 
-A single password is generated for all three and printed once. The seeder refuses to run in
-production, or if the demo data already exists. `composer demo` runs it without wiping the database.
+A single password is generated for all three and printed once. The seeder only runs in the `local`
+or `testing` environment and only on an empty database (no companies, no users). Otherwise it
+refuses with a non-zero exit, so it can never mix demo books into real ones.
 
 ## Checks
 
@@ -108,7 +111,7 @@ long-running process at runtime.
    It only prunes expired API tokens, so the accounting app works without it.
 7. **Backups**: these are the company's books. Turn on cPanel's daily database backups, or JetBackup if the host offers it, and test a restore.
 
-Never run `DemoSeeder` or `migrate:fresh` on the production database.
+Never run `migrate:fresh` or `db:seed` on the production database. The demo seeder refuses there anyway.
 
 ## Known limitations
 

@@ -4,7 +4,9 @@ namespace App\Livewire\Admin\Users;
 
 use App\Models\Company;
 use App\Models\User;
+use App\Support\Money;
 use App\Support\Permissions;
+use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\Features\SupportRedirects\Redirector;
 
+/** Adds or edits an employee: every employee is a login account with staff details and a party in each assigned company. */
 class Form extends Component
 {
     #[Locked]
@@ -30,6 +33,18 @@ class Form extends Component
 
     public bool $isActive = true;
 
+    public string $employeeCode = '';
+
+    public string $designation = '';
+
+    public string $department = '';
+
+    public string $phone = '';
+
+    public string $monthlySalary = '0.00';
+
+    public string $joinedOn = '';
+
     public string $role = 'data-entry';
 
     public array $extraRoles = [];
@@ -43,11 +58,17 @@ class Form extends Component
         $this->userId = $user?->exists ? $user->id : null;
         Gate::authorize($this->userId ? 'users.update' : 'users.create');
         if ($this->userId) {
-            abort_if($user->isRoot(), 403, __('The root account cannot be edited here.'));
+            abort_if($user->isRoot(), 403, __('The super admin cannot be edited here.'));
             abort_unless(ManageableUsers::for(auth()->user())->whereKey($user->id)->exists(), 404);
             $this->name = $user->name;
             $this->email = $user->email;
             $this->isActive = $user->is_active;
+            $this->employeeCode = $user->employee_code ?? '';
+            $this->designation = $user->designation ?? '';
+            $this->department = $user->department ?? '';
+            $this->phone = $user->phone ?? '';
+            $this->monthlySalary = Money::toInput($user->monthly_salary);
+            $this->joinedOn = $user->joined_on?->toDateString() ?? '';
             $this->role = $user->role;
             $this->extraRoles = $user->extra_roles ?? [];
             $this->companyIds = $user->companies()->whereIn('companies.id', auth()->user()->accessibleCompanyIds())
@@ -85,6 +106,9 @@ class Form extends Component
             Gate::authorize('roles.assign');
         }
         $this->email = strtolower(trim($this->email));
+        foreach (['name', 'employeeCode', 'designation', 'department', 'phone', 'monthlySalary', 'joinedOn'] as $field) {
+            $this->{$field} = trim($this->{$field});
+        }
         $allowedRoles = $registry->enabledRoles();
         // A disabled role remains valid for its existing holder, but cannot be newly assigned.
         if ($existing && ! in_array($existing->role, $allowedRoles, true)) {
@@ -94,15 +118,26 @@ class Form extends Component
         $allowedExtras = array_unique([...$allowedExtras, ...($existing->extra_roles ?? [])]);
         $visibleCompanyIds = auth()->user()->accessibleCompanyIds();
         $rules = [
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:150'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->userId)],
+            'employeeCode' => ['nullable', 'string', 'max:30', Rule::unique('users', 'employee_code')->ignore($this->userId)],
+            'designation' => ['nullable', 'string', 'max:255'],
+            'department' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'monthlySalary' => ['required', 'string', function (string $attribute, mixed $value, Closure $fail): void {
+                if (! Money::isValidInput($value)) {
+                    $fail(__('Enter an amount in taka with up to two decimals, e.g. 25,000.50.'));
+                }
+            }],
+            'joinedOn' => ['nullable', 'date_format:Y-m-d'],
             'password' => [$this->userId ? 'nullable' : 'required', 'string', 'max:255', 'confirmed', Password::min(12)->letters()->numbers()],
             'isActive' => ['boolean'], 'role' => ['required', Rule::in($allowedRoles)],
             'extraRoles' => ['array'], 'extraRoles.*' => ['string', 'distinct', Rule::in($allowedExtras)],
             'permissions' => ['array'], 'permissions.*' => ['string', 'distinct', Rule::in($registry->catalogue())],
             'companyIds' => ['array'], 'companyIds.*' => ['integer', 'distinct', Rule::in($visibleCompanyIds)],
         ];
-        $data = $this->validate($rules, [], ['companyIds.*' => __('company')]);
+        $data = $this->validate($rules, [], ['companyIds.*' => __('company'), 'employeeCode' => __('employee code'),
+            'monthlySalary' => __('monthly salary'), 'joinedOn' => __('joining date')]);
         if ($existing?->is(auth()->user())) {
             $this->addError('role', __('Ask another administrator to change your own access.'));
 
@@ -114,7 +149,9 @@ class Form extends Component
             if ($data['password'] !== '') {
                 $user->password = $data['password'];
             }
-            $user->forceFill(['is_active' => $data['isActive'], 'role' => $data['role'], 'extra_roles' => array_values(array_unique($data['extraRoles']))]);
+            $user->forceFill(['is_active' => $data['isActive'], 'role' => $data['role'], 'extra_roles' => array_values(array_unique($data['extraRoles'])),
+                'employee_code' => $data['employeeCode'] ?: null, 'designation' => $data['designation'] ?: null, 'department' => $data['department'] ?: null,
+                'phone' => $data['phone'] ?: null, 'monthly_salary' => Money::toPaisa($data['monthlySalary']), 'joined_on' => $data['joinedOn'] ?: null]);
             if (Gate::allows('permissions.manage')) {
                 $user->denied_permissions = array_values(array_diff($registry->roleCeiling($data['role'], $data['extraRoles']), $data['permissions']));
             }
@@ -122,8 +159,9 @@ class Form extends Component
             // Only assignments the actor can see are changed; the others are preserved.
             $preserved = $user->companies()->whereNotIn('companies.id', $visibleCompanyIds)->pluck('companies.id')->all();
             $user->companies()->sync([...$preserved, ...array_map('intval', $data['companyIds'])]);
+            $user->syncParties();
         });
-        session()->flash('success', __('Account saved.'));
+        session()->flash('success', __('Employee saved.'));
 
         return redirect()->route('admin.users.index');
     }

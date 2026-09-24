@@ -56,6 +56,10 @@ class Permissions
 
     public function label(string $role): string
     {
+        if ($role === self::ROOT_ROLE) {
+            return __('Super admin');
+        }
+
         return $this->isCustom($role) ? ($this->rows()[$role]->label ?? Str::headline($role)) : Str::headline($role);
     }
 
@@ -64,9 +68,10 @@ class Permissions
         if ($role === self::ROOT_ROLE) {
             return $this->catalogue();
         }
+        // A system role uses its config grants until its permissions are edited; a stored null keeps the default.
         $grants = $this->isCustom($role)
             ? ($this->rows()[$role]->permissions ?? [])
-            : config("permissions.roles.{$role}", []);
+            : ($this->rows()[$role]->permissions ?? config("permissions.roles.{$role}", []));
 
         $expanded = [];
         foreach ($this->catalogue() as $ability) {

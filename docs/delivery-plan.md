@@ -266,10 +266,12 @@ Rules for every module:
 | 5c result | Dues report, party statement, employee cost on parties, dashboard dues, DemoSeeder guard + rework | agent `reports` | done: 159 tests green combined; seeder refuses outside local/testing and on non-empty DB, exits 1 |
 | 7a | Header switcher foundation | coordinator | done |
 | 7b | Entries (index, form, settle, export), Chart of accounts | agent `ledger` | done: 41 tests in its files; companyId `#[Locked]` from context; CSV keeps Company column in both modes |
-| 7c | Parties, Employees, Categories, Payment methods | agent `org` | in progress |
+| 7c | Parties, Employees, Categories, Payment methods | agent `org` | done: 177/177 combined, Pint clean, build OK; save re-checks the context company; All-mode category create skips companies that already have the name |
 | 7d | Reports, Dashboard | agent `reports` | done: context-scoped; consolidated trial balance; ledger/party statement ask for a company in All mode |
 | 7e | New company from the header (Anik): "+ New company" beside the switcher and "Add company" on the Companies list both open one off-canvas drawer (`App\Livewire\CreateCompanyDrawer`, event `open-create-company`); shared `Company::formRules()` / `Company::createBy()` | coordinator | done: 2 tests; switches the header to the new company |
-| 6-mysql | Rebuild local MySQL `frish` with `migrate:fresh --seed` (Anik approved 2026-09-24) and re-check the dues queries on MySQL | coordinator | after 5c |
+| 6-mysql | Rebuild local MySQL `frish` with `migrate:fresh --seed` (Anik approved 2026-09-24) and re-check the dues queries on MySQL | coordinator | done: 589 entries balanced (2–3 lines each), all 4 trial balances balance, AR/AP equal dues totals per company, 13 pages render in All and single-company mode on MySQL 9.7 |
+| 7-review | Read-only review of increments 5 and 7 (excluding increment 8 areas) | agent `review-5-7` | in progress |
+| 8 | Employees become users | session frish-5f | started after increment 7 |
 | 6 | Final review, behavior verification, handover (AGENTS.md and README done; refresh for increment 5) | coordinator + agents | last |
 
 ## Acceptance criteria

@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('role')->unique();
             $table->string('label')->nullable();
-            $table->json('permissions');
+            $table->json('permissions')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
