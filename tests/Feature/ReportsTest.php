@@ -8,21 +8,21 @@ use App\Livewire\Admin\Reports\AccountLedger;
 use App\Livewire\Admin\Reports\EmployeeCost;
 use App\Livewire\Admin\Reports\IncomeStatement;
 use App\Livewire\Admin\Reports\TrialBalance;
-use App\Models\Account;
 use App\Models\Company;
 use App\Models\Employee;
-use App\Models\JournalEntry;
+use App\Models\Party;
 use App\Models\RolePermission;
 use App\Models\User;
 use App\Services\LedgerService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Tests\Feature\Concerns\PostsLedgerEntries;
 use Tests\TestCase;
 
 class ReportsTest extends TestCase
 {
-    use RefreshDatabase;
+    use PostsLedgerEntries, RefreshDatabase;
 
     private User $owner;
 
@@ -33,39 +33,20 @@ class ReportsTest extends TestCase
         $this->owner = User::factory()->create(['role' => 'owner']);
     }
 
-    private function user(string $role, Company ...$companies): User
-    {
-        $user = User::factory()->create(['role' => $role]);
-        $user->companies()->attach(array_map(fn (Company $company): int => $company->id, $companies));
-
-        return $user;
-    }
-
-    private function account(Company $company, string $code): Account
-    {
-        return $company->accounts()->where('code', $code)->sole();
-    }
-
-    private function record(Company $company, EntryType $type, string $debit, string $credit, int $amount, string $date, array $extra = []): JournalEntry
-    {
-        return app(LedgerService::class)->record($company, $type, $extra + ['entry_date' => $date, 'amount' => $amount,
-            'debit_account_id' => $this->account($company, $debit)->id, 'credit_account_id' => $this->account($company, $credit)->id], $this->owner);
-    }
-
     public function test_income_statement_totals_per_company_and_consolidated_exclude_voided_and_invisible_companies(): void
     {
         $alpha = Company::factory()->create(['name' => 'Alpha Ltd', 'code' => 'ALP']);
         $beta = Company::factory()->create(['name' => 'Beta Ltd', 'code' => 'BET']);
         $hidden = Company::factory()->create(['name' => 'Hidden Ltd', 'code' => 'HID']);
-        app(LedgerService::class)->recordOpening($this->account($alpha, '1010'), 900_000_00, '2026-09-01', $this->owner);
-        $this->record($alpha, EntryType::Income, '1000', '4000', 100_000_00, '2026-09-02');
-        $this->record($alpha, EntryType::Expense, '5100', '1000', 30_000_00, '2026-09-03');
-        $this->record($alpha, EntryType::Transfer, '1000', '1010', 12_000_00, '2026-09-04');
-        app(LedgerService::class)->void($this->record($alpha, EntryType::Income, '1000', '4000', 50_000_00, '2026-09-05'), 'Duplicate', $this->owner);
-        $this->record($beta, EntryType::Income, '1010', '4000', 40_000_00, '2026-09-06');
-        $this->record($beta, EntryType::Expense, '5100', '1010', 5_000_00, '2026-09-07');
-        $this->record($beta, EntryType::Expense, '5000', '1010', 20_000_00, '2026-09-08');
-        $this->record($hidden, EntryType::Income, '1000', '4000', 77_000_00, '2026-09-09');
+        $this->opening($alpha, '1010', 900_000_00, '2026-09-01');
+        $this->bill($alpha, EntryType::Income, '4000', 100_000_00, '2026-09-02');
+        $this->bill($alpha, EntryType::Expense, '5100', 30_000_00, '2026-09-03');
+        $this->transfer($alpha, '1000', '1010', 12_000_00, '2026-09-04');
+        $this->void($this->bill($alpha, EntryType::Income, '4000', 50_000_00, '2026-09-05'), 'Duplicate');
+        $this->bill($beta, EntryType::Income, '4000', 40_000_00, '2026-09-06', ['method' => '1010']);
+        $this->bill($beta, EntryType::Expense, '5100', 5_000_00, '2026-09-07', ['method' => '1010']);
+        $this->bill($beta, EntryType::Expense, '5000', 20_000_00, '2026-09-08', ['method' => '1010']);
+        $this->bill($hidden, EntryType::Income, '4000', 77_000_00, '2026-09-09');
         $this->actingAs($this->user('accountant', $alpha, $beta));
 
         $consolidated = Livewire::test(IncomeStatement::class)
@@ -80,9 +61,27 @@ class ReportsTest extends TestCase
             ->assertViewHas('totalIncome', [$alpha->id => 100_000_00])->assertViewHas('totalExpense', [$alpha->id => 30_000_00])
             ->assertSee('৳70,000.00')->assertDontSee('৳85,000.00');
 
-        $consolidated->set('company', (string) $hidden->id)
-            ->assertViewHas('income', fn ($rows): bool => $rows->isEmpty())->assertViewHas('columns', fn ($columns): bool => $columns->isEmpty())
-            ->assertDontSee('৳77,000.00')->assertSee('No income or expense was posted in this period.');
+        $consolidated->set('company', (string) $hidden->id)->assertSet('company', '')
+            ->assertViewHas('totalIncome', [$alpha->id => 100_000_00, $beta->id => 40_000_00])->assertDontSee('৳77,000.00');
+        Livewire::withQueryParams(['company' => $hidden->id])->test(IncomeStatement::class)->assertSet('company', '')->assertDontSee('৳77,000.00');
+    }
+
+    public function test_income_statement_is_accrual_and_never_counts_receipts_or_payments(): void
+    {
+        $company = Company::factory()->create();
+        $customer = Party::factory()->for($company)->create();
+        $supplier = Party::factory()->for($company)->create();
+        $sale = $this->bill($company, EntryType::Income, '4000', 10_000_00, '2026-08-20', ['paid' => 0, 'party' => $customer, 'due' => '2026-09-20']);
+        $purchase = $this->bill($company, EntryType::Expense, '5400', 4_000_00, '2026-08-21', ['paid' => 1_000_00, 'party' => $supplier, 'due' => '2026-09-21']);
+        $this->settle($sale, 6_000_00, '2026-09-05');
+        $this->settle($purchase, 3_000_00, '2026-09-06', '1020');
+        $this->actingAs($this->owner);
+
+        Livewire::test(IncomeStatement::class)->set('period', 'last_month')
+            ->assertViewHas('totalIncome', [$company->id => 10_000_00])->assertViewHas('totalExpense', [$company->id => 4_000_00])
+            ->set('period', 'this_month')
+            ->assertViewHas('income', fn ($rows): bool => $rows->isEmpty())->assertViewHas('expense', fn ($rows): bool => $rows->isEmpty())
+            ->assertSee('No income or expense was posted in this period.');
     }
 
     public function test_period_presets_follow_the_bangladesh_fiscal_year(): void
@@ -104,10 +103,10 @@ class ReportsTest extends TestCase
     public function test_custom_periods_include_both_boundary_dates_and_reject_reversed_dates(): void
     {
         $company = Company::factory()->create();
-        $this->record($company, EntryType::Income, '1000', '4000', 1_000_00, '2026-07-31');
-        $this->record($company, EntryType::Income, '1000', '4000', 100_00, '2026-08-01');
-        $this->record($company, EntryType::Income, '1000', '4000', 200_00, '2026-08-31');
-        $this->record($company, EntryType::Income, '1000', '4000', 5_000_00, '2026-09-01');
+        $this->bill($company, EntryType::Income, '4000', 1_000_00, '2026-07-31');
+        $this->bill($company, EntryType::Income, '4000', 100_00, '2026-08-01');
+        $this->bill($company, EntryType::Income, '4000', 200_00, '2026-08-31');
+        $this->bill($company, EntryType::Income, '4000', 5_000_00, '2026-09-01');
         $this->actingAs($this->owner);
 
         Livewire::test(IncomeStatement::class)->set('from', '2026-08-01')->assertSet('period', 'custom')->set('to', '2026-08-31')
@@ -118,13 +117,13 @@ class ReportsTest extends TestCase
     public function test_account_ledger_shows_opening_running_and_closing_balances(): void
     {
         $company = Company::factory()->create();
-        $cash = $this->account($company, '1000');
-        app(LedgerService::class)->recordOpening($cash, 10_000_00, '2026-07-01', $this->owner);
-        $this->record($company, EntryType::Income, '1000', '4000', 5_000_00, '2026-08-15');
-        $expense = $this->record($company, EntryType::Expense, '5300', '1000', 1_000_00, '2026-09-02');
-        $voided = app(LedgerService::class)->void($this->record($company, EntryType::Expense, '5300', '1000', 500_00, '2026-09-05'), 'Typo', $this->owner);
-        $this->record($company, EntryType::Income, '1000', '4000', 2_000_00, '2026-09-10');
-        $this->record($company, EntryType::Transfer, '1010', '1000', 3_000_00, '2026-09-20');
+        $cash = $company->accounts()->where('code', '1000')->sole();
+        $this->opening($company, '1000', 10_000_00, '2026-07-01');
+        $this->bill($company, EntryType::Income, '4000', 5_000_00, '2026-08-15');
+        $expense = $this->bill($company, EntryType::Expense, '5300', 1_000_00, '2026-09-02');
+        $voided = $this->void($this->bill($company, EntryType::Expense, '5300', 500_00, '2026-09-05'), 'Typo');
+        $this->bill($company, EntryType::Income, '4000', 2_000_00, '2026-09-10');
+        $this->transfer($company, '1010', '1000', 3_000_00, '2026-09-20');
         $this->actingAs($this->user('accountant', $company));
 
         Livewire::test(AccountLedger::class)->assertSet('company', (string) $company->id)->set('account', (string) $cash->id)
@@ -143,25 +142,29 @@ class ReportsTest extends TestCase
     public function test_account_ledger_ignores_crafted_companies_and_accounts(): void
     {
         [$mine, $other] = Company::factory()->count(2)->create();
-        $this->record($other, EntryType::Income, '1000', '4000', 77_000_00, '2026-09-10', ['description' => 'Secret income']);
+        $this->bill($other, EntryType::Income, '4000', 77_000_00, '2026-09-10', ['description' => 'Secret income']);
         $this->actingAs($this->user('accountant', $mine));
+        $foreignCash = $this->accountId($other, '1000');
 
         Livewire::test(AccountLedger::class)->set('company', (string) $other->id)->assertSet('company', (string) $mine->id)
-            ->set('account', (string) $this->account($other, '1000')->id)->assertSet('account', '')->assertViewHas('report', null)
+            ->set('account', (string) $foreignCash)->assertSet('account', '')->assertViewHas('report', null)
             ->assertDontSee('Secret income');
-        Livewire::withQueryParams(['company' => $other->id, 'account' => $this->account($other, '1000')->id])->test(AccountLedger::class)
+        Livewire::withQueryParams(['company' => $other->id, 'account' => $foreignCash])->test(AccountLedger::class)
             ->assertSet('company', (string) $mine->id)->assertViewHas('report', null)->assertDontSee('Secret income');
     }
 
     public function test_trial_balance_balances_and_matches_ledger_balances(): void
     {
         [$company, $other] = Company::factory()->count(2)->create();
-        app(LedgerService::class)->recordOpening($this->account($company, '1010'), 50_000_00, '2026-07-01', $this->owner);
-        $this->record($company, EntryType::Income, '1010', '4000', 20_000_00, '2026-08-10');
-        $this->record($company, EntryType::Expense, '5000', '1000', 3_000_00, '2026-08-11');
-        $this->record($company, EntryType::Transfer, '1000', '1010', 8_000_00, '2026-09-01');
-        app(LedgerService::class)->void($this->record($company, EntryType::Expense, '5100', '1010', 9_999_00, '2026-09-02'), 'Wrong company', $this->owner);
-        $this->record($other, EntryType::Income, '1000', '4000', 77_000_00, '2026-09-03');
+        $customer = Party::factory()->for($company)->create();
+        $this->opening($company, '1010', 50_000_00, '2026-07-01');
+        $this->bill($company, EntryType::Income, '4000', 20_000_00, '2026-08-10', ['method' => '1010']);
+        $this->bill($company, EntryType::Expense, '5000', 3_000_00, '2026-08-11');
+        $this->transfer($company, '1000', '1010', 8_000_00, '2026-09-01');
+        $this->void($this->bill($company, EntryType::Expense, '5100', 9_999_00, '2026-09-02', ['method' => '1010']), 'Wrong company');
+        $credit = $this->bill($company, EntryType::Income, '4900', 6_000_00, '2026-09-03', ['paid' => 1_000_00, 'party' => $customer, 'due' => '2026-10-03']);
+        $this->settle($credit, 2_000_00, '2026-09-10', '1020');
+        $this->bill($other, EntryType::Income, '4000', 77_000_00, '2026-09-03');
         $this->actingAs($this->user('accountant', $company));
 
         $ledger = app(LedgerService::class);
@@ -176,9 +179,10 @@ class ReportsTest extends TestCase
         };
 
         Livewire::test(TrialBalance::class)->assertSet('asOf', '2026-09-24')
-            ->assertViewHas('balanced', true)->assertViewHas('debitTotal', 70_000_00)->assertViewHas('creditTotal', 70_000_00)
+            ->assertViewHas('balanced', true)->assertViewHas('debitTotal', 76_000_00)->assertViewHas('creditTotal', 76_000_00)
             ->assertViewHas('rows', $matchesLedger('2026-09-24'))
-            ->assertViewHas('rows', fn ($rows): bool => $rows->firstWhere('account.code', '1000')['debit'] === 5_000_00)
+            ->assertViewHas('rows', fn ($rows): bool => $rows->firstWhere('account.code', '1000')['debit'] === 6_000_00
+                && $rows->firstWhere('account.code', '1200')['debit'] === 3_000_00)
             ->assertSee('Balanced')->assertDontSee('Out of balance')
             ->set('asOf', '2026-08-10')->assertViewHas('debitTotal', 70_000_00)->assertViewHas('rows', $matchesLedger('2026-08-10'))
             ->assertViewHas('rows', fn ($rows): bool => $rows->firstWhere('account.code', '1000') === null)
@@ -186,40 +190,59 @@ class ReportsTest extends TestCase
             ->set('asOf', '2026-02-30')->assertHasErrors('asOf');
     }
 
-    public function test_employee_cost_totals_are_sorted_scoped_and_linked_to_transactions(): void
+    public function test_employee_cost_uses_employee_parties_with_paid_and_outstanding_amounts(): void
     {
         $alpha = Company::factory()->create();
         $beta = Company::factory()->create();
         $hidden = Company::factory()->create();
-        $rahim = Employee::factory()->for($alpha)->create(['name' => 'Rahim Uddin']);
-        $karim = Employee::factory()->for($alpha)->create(['name' => 'Karim Mia']);
-        $salma = Employee::factory()->for($beta)->create(['name' => 'Salma Khatun']);
-        $secret = Employee::factory()->for($hidden)->create(['name' => 'Secret Person']);
-        $this->record($alpha, EntryType::Expense, '5000', '1000', 25_000_00, '2026-09-01', ['employee_id' => $rahim->id]);
-        $this->record($alpha, EntryType::Expense, '5300', '1000', 25_000_00, '2026-09-15', ['employee_id' => $rahim->id]);
-        $this->record($alpha, EntryType::Expense, '5000', '1000', 30_000_00, '2026-09-10', ['employee_id' => $karim->id]);
-        $this->record($alpha, EntryType::Expense, '5000', '1000', 60_000_00, '2026-08-31', ['employee_id' => $karim->id]);
-        app(LedgerService::class)->void($this->record($alpha, EntryType::Expense, '5000', '1000', 99_000_00, '2026-09-11', ['employee_id' => $karim->id]), 'Duplicate', $this->owner);
-        $this->record($beta, EntryType::Expense, '5000', '1010', 10_000_00, '2026-09-12', ['employee_id' => $salma->id]);
-        $this->record($hidden, EntryType::Expense, '5000', '1000', 88_000_00, '2026-09-12', ['employee_id' => $secret->id]);
+        $rahim = Employee::factory()->for($alpha)->create(['name' => 'Rahim Uddin'])->party;
+        $karim = Employee::factory()->for($alpha)->create(['name' => 'Karim Mia'])->party;
+        $salma = Employee::factory()->for($beta)->create(['name' => 'Salma Khatun'])->party;
+        $secret = Employee::factory()->for($hidden)->create(['name' => 'Secret Person'])->party;
+        $vendor = Party::factory()->for($alpha)->create(['name' => 'Office Vendor']);
+        $this->bill($alpha, EntryType::Expense, '5000', 25_000_00, '2026-09-01', ['party' => $rahim]);
+        $advance = $this->bill($alpha, EntryType::Expense, '5300', 25_000_00, '2026-09-15', ['party' => $rahim, 'paid' => 10_000_00, 'due' => '2026-10-15']);
+        $this->settle($advance, 5_000_00, '2026-09-20');
+        $this->bill($alpha, EntryType::Expense, '5000', 30_000_00, '2026-09-10', ['party' => $karim]);
+        $this->bill($alpha, EntryType::Expense, '5000', 60_000_00, '2026-08-31', ['party' => $karim]);
+        $this->void($this->bill($alpha, EntryType::Expense, '5000', 99_000_00, '2026-09-11', ['party' => $karim]), 'Duplicate');
+        $this->bill($alpha, EntryType::Expense, '5400', 44_000_00, '2026-09-12', ['party' => $vendor]);
+        $this->bill($beta, EntryType::Expense, '5000', 10_000_00, '2026-09-12', ['party' => $salma, 'method' => '1010']);
+        $this->bill($hidden, EntryType::Expense, '5000', 88_000_00, '2026-09-12', ['party' => $secret]);
         $this->actingAs($this->user('accountant', $alpha, $beta));
 
-        $link = route('admin.entries.index', ['company' => $alpha->id, 'employee' => $rahim->id, 'type' => 'expense', 'from' => '2026-09-01', 'to' => '2026-09-30']);
+        $link = route('admin.entries.index', ['company' => $alpha->id, 'party' => $rahim->id, 'type' => 'expense', 'from' => '2026-09-01', 'to' => '2026-09-30']);
         Livewire::test(EmployeeCost::class)
-            ->assertViewHas('rows', fn ($rows): bool => $rows->map(fn (array $row): array => [$row['employee']->id, $row['total'], $row['count']])->all()
-                === [[$rahim->id, 50_000_00, 2], [$karim->id, 30_000_00, 1], [$salma->id, 10_000_00, 1]])
-            ->assertSee($link)->assertSee('৳90,000.00')->assertDontSee('Secret Person')
-            ->set('company', (string) $beta->id)->assertViewHas('rows', fn ($rows): bool => $rows->pluck('employee.id')->all() === [$salma->id])
-            ->set('company', (string) $hidden->id)->assertViewHas('rows', fn ($rows): bool => $rows->isEmpty())->assertDontSee('Secret Person');
+            ->assertViewHas('rows', fn ($rows): bool => $rows->map(fn (array $row): array => [$row['party']->id, $row['total'], $row['paid'], $row['outstanding'], $row['count']])->all()
+                === [[$rahim->id, 50_000_00, 40_000_00, 10_000_00, 2], [$karim->id, 30_000_00, 30_000_00, 0, 1], [$salma->id, 10_000_00, 10_000_00, 0, 1]])
+            ->assertSee($link)->assertSee('৳90,000.00')->assertDontSee('Secret Person')->assertDontSee('Office Vendor')
+            ->set('company', (string) $beta->id)->assertViewHas('rows', fn ($rows): bool => $rows->pluck('party.id')->all() === [$salma->id])
+            ->set('company', (string) $hidden->id)->assertSet('company', '')->assertViewHas('rows', fn ($rows): bool => $rows->count() === 3)
+            ->assertDontSee('Secret Person');
 
-        Livewire::withQueryParams(['company' => $alpha->id, 'employee' => $rahim->id, 'type' => 'expense', 'from' => '2026-09-01', 'to' => '2026-09-30'])
-            ->test(EntriesIndex::class)->assertSet('employee', (string) $rahim->id)->assertViewHas('expense', 50_000_00);
+        Livewire::withQueryParams(['company' => $alpha->id, 'party' => $rahim->id, 'type' => 'expense', 'from' => '2026-09-01', 'to' => '2026-09-30'])
+            ->test(EntriesIndex::class)->assertSet('party', (string) $rahim->id)->assertViewHas('expense', 50_000_00);
+    }
+
+    public function test_employee_cost_also_requires_the_employees_view_permission(): void
+    {
+        $company = Company::factory()->create();
+        $analyst = RolePermission::factory()->create(['role' => 'analyst', 'permissions' => ['admin.access', 'reports.view']]);
+        $this->actingAs($this->user($analyst->role, $company));
+
+        $this->get(route('admin.reports.employee-cost'))->assertForbidden();
+        Livewire::test(EmployeeCost::class)->assertForbidden();
+        $this->get(route('admin.reports.index'))->assertOk()->assertDontSee(route('admin.reports.employee-cost'))
+            ->assertDontSee(route('admin.reports.party-statement'))->assertDontSee(route('admin.accounts.index'))->assertSee(route('admin.reports.dues'));
+
+        $this->actingAs($this->user('accountant', $company))->get(route('admin.reports.index'))
+            ->assertSee(route('admin.reports.employee-cost'))->assertSee(route('admin.reports.party-statement'))->assertSee(route('admin.accounts.index'));
     }
 
     public function test_reports_require_the_reports_view_permission(): void
     {
         $company = Company::factory()->create();
-        $routes = ['index', 'income-statement', 'account-ledger', 'trial-balance', 'employee-cost'];
+        $routes = ['index', 'income-statement', 'account-ledger', 'trial-balance', 'employee-cost', 'dues', 'party-statement'];
 
         $this->actingAs($this->user('accountant', $company));
         foreach ($routes as $route) {

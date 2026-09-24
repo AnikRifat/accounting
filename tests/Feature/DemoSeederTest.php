@@ -2,55 +2,121 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AccountType;
+use App\Enums\DueStatus;
+use App\Enums\EntryType;
 use App\Livewire\Admin\Reports\TrialBalance;
+use App\Models\Account;
 use App\Models\Company;
 use App\Models\Employee;
 use App\Models\JournalEntry;
+use App\Models\Party;
 use App\Models\User;
+use App\Services\LedgerService;
 use Database\Seeders\DemoSeeder;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
+use RuntimeException;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 class DemoSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_demo_seeder_builds_balanced_books_and_refuses_to_run_twice(): void
+    public function test_demo_seeder_builds_balanced_books_with_consistent_dues(): void
     {
         $this->seed(DemoSeeder::class);
 
         $owner = User::where('email', DemoSeeder::OWNER_EMAIL)->sole();
-        $this->assertSame('owner', $owner->role);
-        $this->assertFalse(Hash::check('password', $owner->password));
+        $this->assertSame(['owner', false], [$owner->role, Hash::check('password', $owner->password)]);
         $this->assertSame(2, User::where('email', DemoSeeder::ACCOUNTANT_EMAIL)->sole()->companies()->count());
         $this->assertSame(1, User::where('email', DemoSeeder::DATA_ENTRY_EMAIL)->sole()->companies()->count());
         $this->assertSame(4, Company::count());
         $this->assertSame(2, JournalEntry::whereNotNull('voided_at')->whereNotNull('void_reason')->count());
-        $this->assertGreaterThan(0, JournalEntry::whereNotNull('employee_id')->count());
+        foreach (DueStatus::cases() as $status) {
+            $this->assertTrue(JournalEntry::query()->dueStatus($status)->exists(), "No bill is {$status->value}.");
+        }
+        $this->assertTrue(JournalEntry::query()->posted()->where('type', EntryType::Expense)->whereIn('party_id', Party::whereNotNull('employee_id')->select('id'))->exists());
 
+        $ledger = app(LedgerService::class);
         $this->actingAs($owner);
         foreach (Company::all() as $company) {
             $employees = Employee::where('company_id', $company->id)->count();
+            $customParties = Party::where('company_id', $company->id)->whereNull('employee_id')->count();
             $this->assertTrue($employees >= 3 && $employees <= 5, "{$company->code} has {$employees} employees.");
-            $this->assertGreaterThanOrEqual(3, $company->accounts()->where('is_cash', true)->count());
+            $this->assertTrue($customParties >= 4 && $customParties <= 6, "{$company->code} has {$customParties} custom parties.");
+            $this->assertGreaterThanOrEqual(4, $company->accounts()->paymentMethods()->count());
+            $this->assertTrue($company->accounts()->paymentMethods()->where('code', '>', '1020')->whereNotNull('details')->exists());
             Livewire::test(TrialBalance::class)->set('company', (string) $company->id)
                 ->assertViewHas('balanced', true)->assertViewHas('debitTotal', fn (int $total): bool => $total > 0);
-        }
 
-        $entries = JournalEntry::count();
+            $dues = $ledger->dues([$company->id]);
+            foreach ([[EntryType::Income, AccountType::Asset], [EntryType::Expense, AccountType::Liability]] as [$type, $accountType]) {
+                $control = Account::where('company_id', $company->id)->where('is_system', true)->where('type', $accountType)->sole();
+                $this->assertSame($ledger->balance($control), (int) $dues->where('type', $type)->sum('outstanding'), "{$company->code} {$type->value} control account");
+            }
+            foreach ($dues->groupBy('party_id') as $partyId => $partyDues) {
+                $bills = JournalEntry::query()->posted()->where('party_id', $partyId)->whereIn('type', [EntryType::Income, EntryType::Expense])->get();
+                $this->assertSame($bills->sum(fn (JournalEntry $bill): int => $ledger->outstanding($bill)), (int) $partyDues->sum('outstanding'));
+            }
+        }
+    }
+
+    public function test_demo_seeder_refuses_to_run_twice_without_changing_anything(): void
+    {
         $this->seed(DemoSeeder::class);
+        $owner = User::where('email', DemoSeeder::OWNER_EMAIL)->sole();
+        $entries = JournalEntry::count();
+
+        $this->assertRefuses(fn () => $this->seed(DemoSeeder::class), 'empty books');
         $this->assertSame([4, $entries, $owner->password], [Company::count(), JournalEntry::count(), $owner->fresh()->password]);
     }
 
-    public function test_demo_seeder_refuses_in_production(): void
+    public function test_demo_seeder_refuses_outside_local_and_testing(): void
     {
-        $this->app['env'] = 'production';
+        foreach (['production', 'staging'] as $environment) {
+            $this->app['env'] = $environment;
+            $this->assertRefuses(fn () => $this->app->make(DemoSeeder::class)->setContainer($this->app)->__invoke(), 'local or testing');
+        }
+        $this->assertSame([0, 0], [Company::count(), User::count()]);
+    }
 
-        $this->app->make(DemoSeeder::class)->setContainer($this->app)->__invoke();
+    public function test_demo_seeder_refuses_when_a_company_or_a_user_already_exists(): void
+    {
+        $real = Company::factory()->create(['name' => 'Real Books Ltd']);
+        $this->assertRefuses(fn () => $this->seed(DemoSeeder::class), 'empty books');
+        $this->assertSame([1, 0], [Company::count(), User::count()]);
 
+        $real->accounts()->delete();
+        $real->delete();
+        User::factory()->create();
+        $this->assertRefuses(fn () => $this->seed(DemoSeeder::class), 'empty books');
+        $this->assertSame([0, 1], [Company::count(), User::count()]);
+    }
+
+    public function test_a_refused_seed_exits_the_command_with_a_failure_code(): void
+    {
+        config(['logging.default' => 'null']);
+        User::factory()->create();
+
+        $status = $this->app->make(ConsoleKernel::class)->handle(new ArrayInput(['command' => 'db:seed', '--class' => DemoSeeder::class, '--no-interaction' => true]), $output = new BufferedOutput);
+
+        $this->assertSame(1, $status);
+        $this->assertStringContainsString('DemoSeeder needs empty books', $output->fetch());
         $this->assertSame(0, Company::count());
-        $this->assertFalse(User::where('email', DemoSeeder::OWNER_EMAIL)->exists());
+    }
+
+    private function assertRefuses(callable $seed, string $reason): void
+    {
+        try {
+            $seed();
+            $this->fail('DemoSeeder did not refuse.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString($reason, $exception->getMessage());
+        }
     }
 }
