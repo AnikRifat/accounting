@@ -1,0 +1,2 @@
+@php($appSettings = \App\Models\ApplicationSetting::values())
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin sign in · {{ $appSettings['app_name'] }}</title>@vite(['resources/css/app.css', 'resources/js/app.js']) @livewireStyles</head><body><main class="guest">{{ $slot }}</main>@livewireScripts</body></html>
