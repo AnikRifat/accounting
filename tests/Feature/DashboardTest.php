@@ -128,4 +128,17 @@ class DashboardTest extends TestCase
             ->assertSee('Ask your administrator to assign you a company.')->assertDontSee('Create your first company')
             ->assertDontSee('Income this month');
     }
+
+    public function test_dashboard_allows_toggling_trend_months_between_6_and_12(): void
+    {
+        $company = Company::factory()->create();
+        $this->actingAs($this->user('accountant', $company));
+
+        Livewire::test(Dashboard::class)
+            ->assertSet('trendMonths', 6)
+            ->assertViewHas('cashFlowChart')
+            ->call('setTrendMonths', 12)
+            ->assertSet('trendMonths', 12)
+            ->assertViewHas('months', fn (array $months): bool => count($months) === 12);
+    }
 }

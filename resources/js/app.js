@@ -1,4 +1,5 @@
 import imageUpload from './image-upload';
+import chartComponent from './chart';
 
 // Searchable select behind x-form.select. Options are server-rendered <li> elements, so Livewire
 // morphs them like any other markup; a MutationObserver bumps `revision` so the label stays current.
@@ -380,4 +381,7 @@ window.addEventListener('print-table', (event) => {
     document.body.appendChild(frame);
 });
 
-document.addEventListener('alpine:init', () => window.Alpine.data('imageUpload', imageUpload));
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('imageUpload', imageUpload);
+    window.Alpine.data('chart', chartComponent);
+});

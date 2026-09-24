@@ -24,6 +24,23 @@
                 <x-slot:foot><tr class="grand-total-row"><th scope="row">{{ __('Total') }}</th><td class="num"><x-money :value="$companyTotals->sum('receivable')" /></td><td class="num"><x-money :value="$companyTotals->sum('payable')" /></td></tr></x-slot:foot>
             </x-table>
         @endif
+
+        @if($agingChart !== null)
+            <div class="no-print border-t border-slate-100 p-5 bg-slate-50/50">
+                <div class="grid grid-cols-1 {{ $topPartiesChart !== null ? 'lg:grid-cols-2' : '' }} gap-6">
+                    <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+                        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{{ __('Aging analysis (days overdue)') }}</h3>
+                        <x-chart :type="$agingChart['type']" :data="$agingChart['data']" :options="$agingChart['options']" height="220" />
+                    </div>
+                    @if($topPartiesChart !== null)
+                        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{{ __('Top parties with outstanding balance') }}</h3>
+                            <x-chart :type="$topPartiesChart['type']" :data="$topPartiesChart['data']" :options="$topPartiesChart['options']" :horizontal="true" height="220" />
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
     </x-card>
     @foreach(['receivable' => [__('Receivables (owed to us)'), __('Receive payment')], 'payable' => [__('Payables (we owe)'), __('Make payment')]] as $key => [$heading, $actionLabel])
         @if($companyTotals->isNotEmpty() && $sections[$key]->isNotEmpty())

@@ -52,29 +52,18 @@
         @endif
 
         @if($months !== null)
-            <x-card id="trend" :title="__('Income and expenses, last :count months', ['count' => count($months)])">
+            <x-card id="trend" :title="__('Cash flow & trend, last :count months', ['count' => count($months)])">
                 <x-slot:actions>
-                    <p class="chart-legend"><span><span class="chart-swatch chart-income" aria-hidden="true"></span>{{ __('Income') }}</span><span><span class="chart-swatch chart-expense" aria-hidden="true"></span>{{ __('Expenses') }}</span></p>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm {{ $trendMonths === 6 ? 'btn-primary' : 'btn-secondary' }}" wire:click="setTrendMonths(6)">6M</button>
+                        <button type="button" class="btn btn-sm {{ $trendMonths === 12 ? 'btn-primary' : 'btn-secondary' }}" wire:click="setTrendMonths(12)">12M</button>
+                    </div>
                 </x-slot:actions>
                 @if($chartMax === 0)
                     <x-empty-state emoji="📊" :title="__('No activity yet')" :description="__('No income or expense was posted in these months.')" />
                 @else
-                    <div class="chart" aria-hidden="true">
-                        <div class="chart-axis">
-                            @foreach([0, 50, 100] as $percent)<span style="bottom: {{ $percent }}%">{{ preg_replace('/\.00$/', '', \App\Support\Money::format(intdiv($chartMax * $percent, 100))) }}</span>@endforeach
-                        </div>
-                        <div class="chart-plot">
-                            <span class="chart-grid" style="bottom: 50%"></span><span class="chart-grid" style="bottom: 100%"></span>
-                            @foreach($months as $month)
-                                <div class="chart-group" wire:key="bar-{{ $loop->index }}">
-                                    @foreach(['income' => __('Income'), 'expense' => __('Expenses')] as $series => $seriesLabel)
-                                        <span class="chart-bar chart-{{ $series }}" style="height: {{ round($month[$series] * 100 / $chartMax, 2) }}%" title="{{ $month['label'] }} · {{ $seriesLabel }}: {{ \App\Support\Money::format($month[$series]) }}"></span>
-                                    @endforeach
-                                </div>
-                            @endforeach
-                        </div>
-                        <div></div>
-                        <div class="chart-labels">@foreach($months as $month)<span wire:key="label-{{ $loop->index }}">{{ $month['short'] }}</span>@endforeach</div>
+                    <div class="pt-2 pb-4">
+                        <x-chart :data="$cashFlowChart['data']" :options="$cashFlowChart['options']" height="300" />
                     </div>
                 @endif
                 <details class="disclosure"><summary>{{ __('View as table') }}</summary>
@@ -90,34 +79,105 @@
             </x-card>
         @endif
 
-        @if($dues !== null)
-            <x-card id="dues" :title="__('Dues')" flush>
-                <x-slot:actions>@can('reports.view')<x-button variant="secondary" size="sm" :href="route('admin.reports.dues')">{{ __('Dues report') }}</x-button>@endcan</x-slot:actions>
-                <div class="split-stats px-5 pb-4 max-sm:px-4">
-                    <div><p class="muted">{{ __('Receivable (owed to us)') }}</p><p class="stat-value"><x-money :value="$dues['receivable']" /></p></div>
-                    <div><p class="muted">{{ __('Payable (we owe)') }}</p><p class="stat-value"><x-money :value="$dues['payable']" /></p></div>
-                    <div><p class="muted">{{ __('Overdue bills') }}</p><p class="stat-value">{{ $dues['overdue'] }}</p>
-                        @if($dues['overdue'] > 0)<a class="text-link" href="{{ auth()->user()->can('reports.view') ? route('admin.reports.dues', ['overdue' => 1]) : route('admin.entries.index', ['status' => 'overdue']) }}" wire:navigate>{{ __('See overdue') }}</a>@endif</div>
-                </div>
-                @if($dues['next']->isNotEmpty())
-                    <x-table :caption="__('Next dues')" show-caption>
-                        <x-slot:head><th scope="col">{{ __('Due date') }}</th><th scope="col">{{ __('Party') }}</th><th scope="col">{{ __('Entry') }}</th><th scope="col" class="num">{{ __('Outstanding') }}</th></x-slot:head>
-                        @foreach($dues['next'] as $bill)
-                            <tr wire:key="next-due-{{ $bill->id }}">
-                                <td class="nowrap">{{ $bill->due_date?->format('d M Y') }}@if($bill->dueStatus() === \App\Enums\DueStatus::Overdue) <x-badge tone="danger">{{ __('Overdue') }}</x-badge>@endif</td>
-                                <td>{{ $bill->party?->name }}@if($consolidated)<p class="muted">{{ $bill->company->name }}</p>@endif</td>
-                                <td>{{ $bill->number }}<p class="muted">{{ $bill->type === \App\Enums\EntryType::Income ? __('Receivable') : __('Payable') }}</p></td>
-                                <td class="num"><x-money :value="(int) $bill->outstanding" /></td>
-                            </tr>
-                        @endforeach
-                    </x-table>
-                @endif
-            </x-card>
-        @endif
-
         <div class="grid-2">
+            @if($expenseBreakdown !== null)
+                <x-card id="expenses" :title="__('Expense breakdown')" :description="__('Top cost drivers for the selected :count months period', ['count' => $trendMonths])">
+                    <x-slot:actions>
+                        <span class="badge badge-subtle font-mono text-xs">{{ __('Total:') }} <x-money :value="$expenseBreakdown['total']" /></span>
+                    </x-slot:actions>
+                    <div class="flex flex-col sm:flex-row items-center gap-6 py-2">
+                        <div class="w-48 h-48 shrink-0 relative flex items-center justify-center">
+                            <x-chart type="doughnut" :data="$expenseBreakdown['chart']['data']" :options="$expenseBreakdown['chart']['options']" height="190" />
+                        </div>
+                        <div class="flex-1 w-full space-y-2.5">
+                            @foreach($expenseBreakdown['items'] as $item)
+                                <div class="flex items-center justify-between text-xs" wire:key="exp-item-{{ $loop->index }}">
+                                    <div class="flex items-center gap-2 truncate pr-2">
+                                        <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0" style="background-color: {{ $item['color'] }}"></span>
+                                        <span class="font-medium text-slate-800 truncate" title="{{ $item['name'] }}">{{ $item['name'] }}</span>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <span class="font-semibold text-slate-900"><x-money :value="$item['amount']" /></span>
+                                        <span class="text-slate-400 text-[11px] ml-1">({{ $item['percent'] }}%)</span>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </x-card>
+            @endif
+
+            @if($dues !== null)
+                <x-card id="dues" :title="__('Dues')" flush>
+                    <x-slot:actions>@can('reports.view')<x-button variant="secondary" size="sm" :href="route('admin.reports.dues')">{{ __('Dues report') }}</x-button>@endcan</x-slot:actions>
+                    <div class="split-stats px-5 pb-4 max-sm:px-4">
+                        <div><p class="muted">{{ __('Receivable (owed to us)') }}</p><p class="stat-value"><x-money :value="$dues['receivable']" /></p></div>
+                        <div><p class="muted">{{ __('Payable (we owe)') }}</p><p class="stat-value"><x-money :value="$dues['payable']" /></p></div>
+                        <div><p class="muted">{{ __('Overdue bills') }}</p><p class="stat-value">{{ $dues['overdue'] }}</p>
+                            @if($dues['overdue'] > 0)<a class="text-link" href="{{ auth()->user()->can('reports.view') ? route('admin.reports.dues', ['overdue' => 1]) : route('admin.entries.index', ['status' => 'overdue']) }}" wire:navigate>{{ __('See overdue') }}</a>@endif</div>
+                    </div>
+
+                    @if(!empty($dues['aging']['receivable']) && ($dues['receivable'] > 0 || $dues['payable'] > 0))
+                        <div class="px-5 pb-4 max-sm:px-4 border-t border-slate-100 pt-3">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">{{ __('Receivables aging breakdown') }}</p>
+                            <div class="grid grid-cols-4 gap-2 text-center text-xs">
+                                <div class="bg-slate-50 rounded-lg p-2">
+                                    <span class="text-[11px] text-slate-500 block">{{ __('Current') }}</span>
+                                    <span class="font-medium text-slate-900"><x-money :value="$dues['aging']['receivable']['current']" /></span>
+                                </div>
+                                <div class="bg-amber-50 rounded-lg p-2">
+                                    <span class="text-[11px] text-amber-700 block">1–30d</span>
+                                    <span class="font-medium text-amber-900"><x-money :value="$dues['aging']['receivable']['overdue_1_30']" /></span>
+                                </div>
+                                <div class="bg-orange-50 rounded-lg p-2">
+                                    <span class="text-[11px] text-orange-700 block">31–60d</span>
+                                    <span class="font-medium text-orange-900"><x-money :value="$dues['aging']['receivable']['overdue_31_60']" /></span>
+                                </div>
+                                <div class="bg-rose-50 rounded-lg p-2">
+                                    <span class="text-[11px] text-rose-700 block">60d+</span>
+                                    <span class="font-medium text-rose-900"><x-money :value="$dues['aging']['receivable']['overdue_60_plus']" /></span>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if($dues['next']->isNotEmpty())
+                        <x-table :caption="__('Next dues')" show-caption>
+                            <x-slot:head><th scope="col">{{ __('Due date') }}</th><th scope="col">{{ __('Party') }}</th><th scope="col">{{ __('Entry') }}</th><th scope="col" class="num">{{ __('Outstanding') }}</th></x-slot:head>
+                            @foreach($dues['next'] as $bill)
+                                <tr wire:key="next-due-{{ $bill->id }}">
+                                    <td class="nowrap">{{ $bill->due_date?->format('d M Y') }}@if($bill->dueStatus() === \App\Enums\DueStatus::Overdue) <x-badge tone="danger">{{ __('Overdue') }}</x-badge>@endif</td>
+                                    <td>{{ $bill->party?->name }}@if($consolidated)<p class="muted">{{ $bill->company->name }}</p>@endif</td>
+                                    <td>{{ $bill->number }}<p class="muted">{{ $bill->type === \App\Enums\EntryType::Income ? __('Receivable') : __('Payable') }}</p></td>
+                                    <td class="num"><x-money :value="(int) $bill->outstanding" /></td>
+                                </tr>
+                            @endforeach
+                        </x-table>
+                    @endif
+                </x-card>
+            @endif
+        </div>
+
+        <div class="grid-2 mt-6">
             @if($cash !== null)
                 <x-card id="cash" :title="__('Cash position')" flush>
+                    @if(!empty($cash['byType']) && $cash['total'] !== 0)
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 pt-3 pb-3 border-b border-slate-100 max-sm:px-4">
+                            @foreach($cash['byType'] as $kind => $info)
+                                @if($info['amount'] !== 0)
+                                    <div class="bg-slate-50/80 rounded-lg p-2 text-xs" wire:key="liquidity-{{ $kind }}">
+                                        <div class="flex items-center gap-1.5 text-slate-500 mb-0.5">
+                                            <span>{{ $info['icon'] }}</span>
+                                            <span class="truncate">{{ $info['label'] }}</span>
+                                        </div>
+                                        <div class="font-semibold text-slate-900">
+                                            <x-money :value="$info['amount']" />
+                                        </div>
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
                     @if($cash['companies'] === [])
                         <x-empty-state emoji="💳" :title="__('No payment methods yet.')" />
                     @else
@@ -137,6 +197,7 @@
                     @endif
                 </x-card>
             @endif
+
             @if($recent !== null)
                 <x-card id="recent" :title="__('Recent entries')" flush>
                     <x-slot:actions><x-button variant="secondary" size="sm" :href="route('admin.entries.index')">{{ __('All transactions') }}</x-button></x-slot:actions>

@@ -12,6 +12,23 @@
         @if($income->isEmpty() && $expense->isEmpty())
             <x-empty-state emoji="📈" :title="__('Nothing to show')" :description="__('No income or expense was posted in this period.')" />
         @else
+            @if($overviewChart !== null)
+                <div class="no-print border-b border-slate-100 p-5 bg-slate-50/50">
+                    <div class="grid grid-cols-1 {{ $topExpenseChart !== null ? 'lg:grid-cols-2' : '' }} gap-6">
+                        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+                            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{{ __('Performance overview') }}</h3>
+                            <x-chart :type="$overviewChart['type']" :data="$overviewChart['data']" :options="$overviewChart['options']" height="220" />
+                        </div>
+                        @if($topExpenseChart !== null)
+                            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+                                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{{ __('Top expense drivers') }}</h3>
+                                <x-chart type="doughnut" :data="$topExpenseChart['data']" :options="$topExpenseChart['options']" height="220" />
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <x-table :caption="__('Income statement')" grouped>
                 <x-slot:head><th scope="col">{{ __('Account') }}</th>
                     @foreach($columns as $column)<th scope="col" class="num" wire:key="col-{{ $column->id }}">@if($consolidated)<abbr title="{{ $column->name }}">{{ $column->code }}</abbr>@else{{ __('Amount') }}@endif</th>@endforeach

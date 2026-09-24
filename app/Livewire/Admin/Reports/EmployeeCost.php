@@ -44,6 +44,40 @@ class EmployeeCost extends Component
             ])->values();
         }
 
+        $chart = null;
+        if ($rows->isNotEmpty() && $rows->sum('total') > 0) {
+            $topEmployees = $rows->take(8);
+            $chart = [
+                'type' => 'bar',
+                'data' => [
+                    'labels' => $topEmployees->map(fn (array $r): string => $r['party']->name)->all(),
+                    'datasets' => [
+                        [
+                            'label' => __('Paid'),
+                            'data' => $topEmployees->pluck('paid')->all(),
+                            'backgroundColor' => '#16a34a',
+                            'borderRadius' => 4,
+                        ],
+                        [
+                            'label' => __('Outstanding'),
+                            'data' => $topEmployees->pluck('outstanding')->all(),
+                            'backgroundColor' => '#f59e0b',
+                            'borderRadius' => 4,
+                        ],
+                    ],
+                ],
+                'options' => [
+                    'scales' => [
+                        'x' => ['stacked' => true],
+                        'y' => ['stacked' => true],
+                    ],
+                    'plugins' => [
+                        'legend' => ['display' => true],
+                    ],
+                ],
+            ];
+        }
+
         return view('livewire.admin.reports.employee-cost', [
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
@@ -53,6 +87,7 @@ class EmployeeCost extends Component
             'scopeLabel' => $context->isAll() ? __('All companies') : $context->company()->name,
             'consolidated' => $context->isAll(),
             'rows' => $rows,
+            'chart' => $chart,
         ])->layout('layouts.admin');
     }
 }

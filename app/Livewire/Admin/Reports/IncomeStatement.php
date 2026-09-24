@@ -50,6 +50,86 @@ class IncomeStatement extends Component
             $totals[$type->value] = $columns->mapWithKeys(fn (Company $company): array => [$company->id => $rows->sum(fn (array $row): int => $row['amounts'][$company->id] ?? 0)])->all();
         }
 
+        $grandTotalIncome = array_sum($totals[AccountType::Income->value]);
+        $grandTotalExpense = array_sum($totals[AccountType::Expense->value]);
+        $grandNet = $grandTotalIncome - $grandTotalExpense;
+
+        $overviewChart = null;
+        if ($grandTotalIncome > 0 || $grandTotalExpense > 0) {
+            if ($consolidated && $columns->count() > 1) {
+                $overviewChart = [
+                    'type' => 'bar',
+                    'data' => [
+                        'labels' => $columns->pluck('code')->all(),
+                        'datasets' => [
+                            [
+                                'label' => __('Income'),
+                                'data' => $columns->map(fn (Company $c): int => $totals[AccountType::Income->value][$c->id] ?? 0)->all(),
+                                'backgroundColor' => '#16a34a',
+                                'borderRadius' => 4,
+                            ],
+                            [
+                                'label' => __('Expenses'),
+                                'data' => $columns->map(fn (Company $c): int => $totals[AccountType::Expense->value][$c->id] ?? 0)->all(),
+                                'backgroundColor' => '#dc2626',
+                                'borderRadius' => 4,
+                            ],
+                        ],
+                    ],
+                    'options' => [
+                        'plugins' => ['legend' => ['display' => true]],
+                    ],
+                ];
+            } else {
+                $overviewChart = [
+                    'type' => 'bar',
+                    'data' => [
+                        'labels' => [__('Income'), __('Expenses'), __('Net profit')],
+                        'datasets' => [
+                            [
+                                'label' => __('Total'),
+                                'data' => [$grandTotalIncome, $grandTotalExpense, $grandNet],
+                                'backgroundColor' => [
+                                    '#16a34a',
+                                    '#dc2626',
+                                    $grandNet >= 0 ? '#2563eb' : '#e11d48',
+                                ],
+                                'borderRadius' => 6,
+                            ],
+                        ],
+                    ],
+                    'options' => [
+                        'plugins' => ['legend' => ['display' => false]],
+                    ],
+                ];
+            }
+        }
+
+        $topExpenseChart = null;
+        if ($sections[AccountType::Expense->value]->isNotEmpty() && $grandTotalExpense > 0) {
+            $sortedExpenses = $sections[AccountType::Expense->value]->sortByDesc('total')->take(5);
+            $topExpenseChart = [
+                'type' => 'doughnut',
+                'data' => [
+                    'labels' => $sortedExpenses->pluck('name')->all(),
+                    'datasets' => [
+                        [
+                            'data' => $sortedExpenses->pluck('total')->all(),
+                            'backgroundColor' => ['#dc2626', '#ea580c', '#d97706', '#2563eb', '#7c3aed'],
+                            'borderWidth' => 2,
+                            'borderColor' => '#ffffff',
+                        ],
+                    ],
+                ],
+                'options' => [
+                    'cutout' => '70%',
+                    'plugins' => [
+                        'legend' => ['position' => 'bottom'],
+                    ],
+                ],
+            ];
+        }
+
         return view('livewire.admin.reports.income-statement', [
             'periodOptions' => $this->periodOptions(),
             'periodLabel' => $this->periodLabel($range),
@@ -60,6 +140,9 @@ class IncomeStatement extends Component
             'expense' => $sections[AccountType::Expense->value],
             'totalIncome' => $totals[AccountType::Income->value],
             'totalExpense' => $totals[AccountType::Expense->value],
+            'grandNet' => $grandNet,
+            'overviewChart' => $overviewChart,
+            'topExpenseChart' => $topExpenseChart,
         ])->layout('layouts.admin');
     }
 }

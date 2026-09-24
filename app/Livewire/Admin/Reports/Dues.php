@@ -59,6 +59,7 @@ class Dues extends Component
         $companyIds = $context->companyIds();
         $type = ['receivable' => EntryType::Income, 'payable' => EntryType::Expense][$this->kind] ?? null;
         $today = CarbonImmutable::today()->toDateString();
+        $todayDate = CarbonImmutable::today();
 
         $bills = app(LedgerService::class)->dues($companyIds, $type);
         $partyOptions = $bills->pluck('party')->filter()->unique('id')->sortBy('name')
@@ -70,6 +71,106 @@ class Dues extends Component
             ->when($this->overdue, fn (Collection $items) => $items->filter(fn (JournalEntry $bill): bool => $bill->due_date !== null && $bill->due_date->toDateString() < $today))
             ->values();
         $bills->load('lines.account');
+
+        $receivableAging = ['current' => 0, 'overdue_1_30' => 0, 'overdue_31_60' => 0, 'overdue_60_plus' => 0];
+        $payableAging = ['current' => 0, 'overdue_1_30' => 0, 'overdue_31_60' => 0, 'overdue_60_plus' => 0];
+
+        foreach ($bills as $bill) {
+            $outstanding = (int) $bill->outstanding;
+            $isIncome = $bill->type === EntryType::Income;
+            $dueDate = $bill->due_date ? CarbonImmutable::parse($bill->due_date) : null;
+
+            if ($dueDate === null || $dueDate->gte($todayDate)) {
+                if ($isIncome) {
+                    $receivableAging['current'] += $outstanding;
+                } else {
+                    $payableAging['current'] += $outstanding;
+                }
+            } else {
+                $days = (int) $dueDate->diffInDays($todayDate);
+                if ($days <= 30) {
+                    if ($isIncome) {
+                        $receivableAging['overdue_1_30'] += $outstanding;
+                    } else {
+                        $payableAging['overdue_1_30'] += $outstanding;
+                    }
+                } elseif ($days <= 60) {
+                    if ($isIncome) {
+                        $receivableAging['overdue_31_60'] += $outstanding;
+                    } else {
+                        $payableAging['overdue_31_60'] += $outstanding;
+                    }
+                } else {
+                    if ($isIncome) {
+                        $receivableAging['overdue_60_plus'] += $outstanding;
+                    } else {
+                        $payableAging['overdue_60_plus'] += $outstanding;
+                    }
+                }
+            }
+        }
+
+        $agingChart = null;
+        if ($bills->isNotEmpty()) {
+            $datasets = [];
+            if ($this->kind !== 'payable') {
+                $datasets[] = [
+                    'label' => __('Receivables (owed to us)'),
+                    'data' => array_values($receivableAging),
+                    'backgroundColor' => '#16a34a',
+                    'borderRadius' => 4,
+                ];
+            }
+            if ($this->kind !== 'receivable') {
+                $datasets[] = [
+                    'label' => __('Payables (we owe)'),
+                    'data' => array_values($payableAging),
+                    'backgroundColor' => '#dc2626',
+                    'borderRadius' => 4,
+                ];
+            }
+            $agingChart = [
+                'type' => 'bar',
+                'data' => [
+                    'labels' => [__('Current / Not due'), __('1–30d overdue'), __('31–60d overdue'), __('60d+ overdue')],
+                    'datasets' => $datasets,
+                ],
+                'options' => [
+                    'plugins' => ['legend' => ['display' => $this->kind === '']],
+                ],
+            ];
+        }
+
+        $topParties = $bills->whereNotNull('party_id')->groupBy('party_id')
+            ->map(fn (Collection $items): array => [
+                'name' => $items->first()->party?->name ?? __('No party'),
+                'total' => (int) $items->sum('outstanding'),
+            ])
+            ->sortByDesc('total')
+            ->take(5)
+            ->values();
+
+        $topPartiesChart = null;
+        if ($topParties->isNotEmpty() && $topParties->sum('total') > 0) {
+            $topPartiesChart = [
+                'type' => 'bar',
+                'data' => [
+                    'labels' => $topParties->pluck('name')->all(),
+                    'datasets' => [
+                        [
+                            'label' => __('Outstanding'),
+                            'data' => $topParties->pluck('total')->all(),
+                            'backgroundColor' => '#2563eb',
+                            'borderRadius' => 4,
+                        ],
+                    ],
+                ],
+                'options' => [
+                    'indexAxis' => 'y',
+                    'plugins' => ['legend' => ['display' => false]],
+                ],
+            ];
+        }
 
         return view('livewire.admin.reports.dues', [
             'kindOptions' => ['' => __('Receivable and payable'), 'receivable' => __('Receivable (owed to us)'), 'payable' => __('Payable (we owe)')],
@@ -86,6 +187,8 @@ class Dues extends Component
                 'payable' => (int) $items->where('type', EntryType::Expense)->sum('outstanding'),
             ])->sortBy('company.name')->values(),
             'todayLabel' => CarbonImmutable::today()->format('d M Y'),
+            'agingChart' => $agingChart,
+            'topPartiesChart' => $topPartiesChart,
         ])->layout('layouts.admin');
     }
 

@@ -13,6 +13,15 @@
         @if($rows->isEmpty())
             <x-empty-state emoji="👥" :title="__('Nothing to show')" :description="__('No employee expenses were posted in this period.')" />
         @else
+            @if($chart !== null)
+                <div class="no-print border-y border-slate-100 p-5 bg-slate-50/50">
+                    <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs max-w-3xl">
+                        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{{ __('Cost distribution by employee (Paid vs Outstanding)') }}</h3>
+                        <x-chart :type="$chart['type']" :data="$chart['data']" :options="$chart['options']" height="240" />
+                    </div>
+                </div>
+            @endif
+
             <x-table :caption="__('Employee cost')">
                 <x-slot:head><th scope="col">{{ __('Employee') }}</th>@if($consolidated)<th scope="col">{{ __('Company') }}</th>@endif<th scope="col" class="num">{{ __('Entries') }}</th><th scope="col" class="num">{{ __('Total') }}</th><th scope="col" class="num">{{ __('Paid') }}</th><th scope="col" class="num">{{ __('Outstanding') }}</th><th scope="col" class="no-print actions-col"><span class="sr-only">{{ __('Transactions') }}</span></th></x-slot:head>
                 @foreach($rows as $row)
