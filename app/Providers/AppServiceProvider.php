@@ -19,6 +19,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if ($this->app->environment('production')) {
+            \URL::forceScheme('https');
+        }
         // The super admin skips every ability and policy check; a deactivated one gets nothing from here.
         Gate::before(fn (User $user): ?bool => $user->isRoot() && $user->is_active ? true : null);
         foreach (app(Permissions::class)->catalogue() as $permission) {
