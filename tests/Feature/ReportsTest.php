@@ -11,7 +11,6 @@ use App\Livewire\Admin\Reports\IncomeStatement;
 use App\Livewire\Admin\Reports\TrialBalance;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\Party;
 use App\Models\RolePermission;
 use App\Models\User;
@@ -259,10 +258,11 @@ class ReportsTest extends TestCase
         $alpha = Company::factory()->create();
         $beta = Company::factory()->create();
         $hidden = Company::factory()->create();
-        $rahim = Employee::factory()->for($alpha)->create(['name' => 'Rahim Uddin'])->party;
-        $karim = Employee::factory()->for($alpha)->create(['name' => 'Karim Mia'])->party;
-        $salma = Employee::factory()->for($beta)->create(['name' => 'Salma Khatun'])->party;
-        $secret = Employee::factory()->for($hidden)->create(['name' => 'Secret Person'])->party;
+        $rahim = User::factory()->employeeOf($alpha)->create(['name' => 'Rahim Uddin'])->parties()->sole();
+        $karim = User::factory()->employeeOf($alpha)->create(['name' => 'Karim Mia'])->parties()->sole();
+        // Salma works for both companies and has a party in each; only her Beta party has expenses.
+        $salma = User::factory()->employeeOf($alpha, $beta)->create(['name' => 'Salma Khatun'])->parties()->where('company_id', $beta->id)->sole();
+        $secret = User::factory()->employeeOf($hidden)->create(['name' => 'Secret Person'])->parties()->sole();
         $vendor = Party::factory()->for($alpha)->create(['name' => 'Office Vendor']);
         $this->bill($alpha, EntryType::Expense, '5000', 25_000_00, '2026-09-01', ['party' => $rahim]);
         $advance = $this->bill($alpha, EntryType::Expense, '5300', 25_000_00, '2026-09-15', ['party' => $rahim, 'paid' => 10_000_00, 'due' => '2026-10-15']);
@@ -291,7 +291,7 @@ class ReportsTest extends TestCase
             ->test(EntriesIndex::class)->assertSet('party', (string) $rahim->id)->assertViewHas('expense', 50_000_00);
     }
 
-    public function test_employee_cost_also_requires_the_employees_view_permission(): void
+    public function test_employee_cost_also_requires_the_users_view_permission(): void
     {
         $company = Company::factory()->create();
         $analyst = RolePermission::factory()->create(['role' => 'analyst', 'permissions' => ['admin.access', 'reports.view']]);

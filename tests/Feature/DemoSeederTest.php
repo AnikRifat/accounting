@@ -8,7 +8,6 @@ use App\Enums\EntryType;
 use App\Livewire\Admin\Reports\TrialBalance;
 use App\Models\Account;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\User;
@@ -33,23 +32,29 @@ class DemoSeederTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $owner = User::where('email', DemoSeeder::OWNER_EMAIL)->sole();
-        $this->assertSame(['owner', false], [$owner->role, Hash::check('password', $owner->password)]);
-        $this->assertSame(2, User::where('email', DemoSeeder::ACCOUNTANT_EMAIL)->sole()->companies()->count());
-        $this->assertSame(1, User::where('email', DemoSeeder::DATA_ENTRY_EMAIL)->sole()->companies()->count());
+        // Anik's choice: a fixed, well-known demo password. The seeder is only safe because it refuses outside
+        // local/testing and on non-empty databases (see the refusal tests below).
+        $this->assertSame(['owner', true], [$owner->role, Hash::check('password', $owner->password)]);
+        $this->assertSame(2, User::where('email', DemoSeeder::ACCOUNTANT_EMAIL)->sole()->parties()->where('is_active', true)->count());
+        $this->assertSame(1, User::where('email', DemoSeeder::DATA_ENTRY_EMAIL)->sole()->parties()->where('is_active', true)->count());
+        $this->assertSame(0, $owner->parties()->count());
+        $staff = User::whereNotNull('employee_code')->get();
+        $this->assertTrue($staff->every(fn (User $user): bool => $user->monthly_salary > 0 && $user->parties()->count() === 1 && $user->role === 'data-entry'));
         $this->assertSame(4, Company::count());
         $this->assertSame(2, JournalEntry::whereNotNull('voided_at')->whereNotNull('void_reason')->count());
         foreach (DueStatus::cases() as $status) {
             $this->assertTrue(JournalEntry::query()->dueStatus($status)->exists(), "No bill is {$status->value}.");
         }
-        $this->assertTrue(JournalEntry::query()->posted()->where('type', EntryType::Expense)->whereIn('party_id', Party::whereNotNull('employee_id')->select('id'))->exists());
+        $this->assertTrue(JournalEntry::query()->posted()->where('type', EntryType::Expense)->whereIn('party_id', Party::whereNotNull('user_id')->select('id'))->exists());
 
         $ledger = app(LedgerService::class);
         $this->actingAs($owner);
         Livewire::test(TrialBalance::class)->assertViewHas('consolidated', true)->assertViewHas('balanced', true);
         foreach (Company::all() as $company) {
-            $employees = Employee::where('company_id', $company->id)->count();
-            $customParties = Party::where('company_id', $company->id)->whereNull('employee_id')->count();
-            $this->assertTrue($employees >= 3 && $employees <= 5, "{$company->code} has {$employees} employees.");
+            // Three to five staff, plus the demo accountant or data-entry user where they are assigned.
+            $employees = Party::where('company_id', $company->id)->whereNotNull('user_id')->count();
+            $customParties = Party::where('company_id', $company->id)->whereNull('user_id')->count();
+            $this->assertTrue($employees >= 3 && $employees <= 6, "{$company->code} has {$employees} employees.");
             $this->assertTrue($customParties >= 4 && $customParties <= 6, "{$company->code} has {$customParties} custom parties.");
             $this->assertGreaterThanOrEqual(4, $company->accounts()->paymentMethods()->count());
             $this->assertTrue($company->accounts()->paymentMethods()->where('code', '>', '1020')->whereNotNull('details')->exists());

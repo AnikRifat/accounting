@@ -1,12 +1,35 @@
-<div>
+<div class="page">
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Shared storage') }}</p><h1>{{ __('Media library') }}</h1><p class="muted">{{ __('Tracked images and documents, stored through one shared service.') }}</p></div></div>
-    @can('media.upload')<form wire:submit="saveUpload" class="panel stack mb-6"><div class="form-grid">
-        <x-form.input name="file" :label="__('Image or document')" type="file" wire:model="file" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.csv" required :help="__('JPG, PNG, WebP, GIF, PDF, text or CSV. Maximum 8 MB.')" />
-        <x-form.input name="collection" :label="__('Collection')" wire:model="collection" required :help="__('A purpose such as avatar, document, or banner.')" />
-    </div><div><button class="btn" type="submit" wire:loading.attr="disabled">{{ __('Upload file') }}</button><span wire:loading class="muted ml-3">{{ __('Uploading…') }}</span></div></form>@endcan
-    <div class="panel stack"><div class="table-wrap"><table><thead><tr><th>{{ __('File') }}</th><th>{{ __('Collection') }}</th><th>{{ __('Size') }}</th><th>{{ __('Uploaded') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>
-        @forelse($items as $item)<tr wire:key="media-{{ $item->id }}"><td><strong>{{ $item->filename }}</strong><p class="muted">{{ $item->mime_type }}</p></td><td>{{ $item->collection }}</td><td>{{ number_format($item->size / 1024, 1) }} KB</td><td>{{ $item->created_at->format('M j, Y') }}</td><td><div class="flex gap-4 items-center"><a class="text-link" href="{{ $service->url($item) }}" target="_blank" rel="noopener">{{ __('Open') }}</a>@can('delete', $item)<button class="btn btn-danger" wire:click="delete({{ $item->id }})" wire:confirm="{{ __('Delete this file? Its tracking record will be retained.') }}" wire:loading.attr="disabled">{{ __('Delete') }}</button>@endcan</div></td></tr>
-        @empty<tr><td colspan="5"><p class="muted">{{ __('No files uploaded yet.') }}</p></td></tr>@endforelse
-    </tbody></table></div>{{ $items->links() }}</div>
+    <x-page-header :title="__('Media library')" :description="__('Tracked images and documents, stored through one shared service.')" />
+    @can('media.upload')
+        <x-card :title="__('Upload file')">
+            <form wire:submit="saveUpload" class="stack">
+                <div class="form-grid">
+                    <x-form.input name="file" :label="__('Image or document')" type="file" wire:model="file" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.csv" required :help="__('JPG, PNG, WebP, GIF, PDF, text or CSV. Maximum 8 MB.')" />
+                    <x-form.input name="collection" :label="__('Collection')" wire:model="collection" required :help="__('A purpose such as avatar, document, or banner.')" />
+                </div>
+                <div><x-button type="submit" icon="upload" wire:loading.attr="disabled">{{ __('Upload file') }}</x-button></div>
+            </form>
+        </x-card>
+    @endcan
+    <x-card flush>
+        <x-table :caption="__('Media library')">
+            <x-slot:head><th>{{ __('File') }}</th><th>{{ __('Collection') }}</th><th class="num">{{ __('Size') }}</th><th>{{ __('Uploaded') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            @forelse($items as $item)
+                <tr wire:key="media-{{ $item->id }}">
+                    <td><strong>{{ $item->filename }}</strong><p class="muted">{{ $item->mime_type }}</p></td>
+                    <td><x-badge>{{ $item->collection }}</x-badge></td>
+                    <td class="num">{{ number_format($item->size / 1024, 1) }} KB</td>
+                    <td class="nowrap">{{ $item->created_at->format('d M Y') }}</td>
+                    <td><div class="row-actions">
+                        <x-button variant="ghost" size="sm" icon="external" :href="$service->url($item)" :navigate="false" target="_blank" rel="noopener" :label="__('Open :name', ['name' => $item->filename])">{{ __('Open') }}</x-button>
+                        @can('delete', $item)<x-button variant="danger" size="sm" icon="trash" wire:click="delete({{ $item->id }})" wire:confirm="{{ __('Delete this file? Its tracking record will be retained.') }}" :label="__('Delete :name', ['name' => $item->filename])">{{ __('Delete') }}</x-button>@endcan
+                    </div></td>
+                </tr>
+            @empty
+                <x-table.empty colspan="5" emoji="🖼️">{{ __('No files uploaded yet.') }}</x-table.empty>
+            @endforelse
+        </x-table>
+        {{ $items->links() }}
+    </x-card>
 </div>

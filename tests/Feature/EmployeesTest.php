@@ -2,146 +2,171 @@
 
 namespace Tests\Feature;
 
-use App\Livewire\Admin\Employees\Form;
-use App\Livewire\Admin\Employees\Index;
+use App\Livewire\Admin\Users\Form;
+use App\Livewire\Admin\Users\Index;
 use App\Models\Company;
-use App\Models\Employee;
+use App\Models\Party;
 use App\Models\User;
 use App\Support\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Tests\TestCase;
 
+/** Employees are users: every one signs in, carries staff details, and has a party in each assigned company. */
 class EmployeesTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_is_created_with_salary_stored_in_paisa(): void
+    private const PASSWORD = 'Secret123456';
+
+    private function employee(string $role, Company ...$companies): User
     {
-        $company = Company::factory()->create();
-        $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class)->set('employeeCode', ' E-01 ')->set('name', 'Rahim Uddin')
-            ->set('designation', 'Driver')->set('monthlySalary', '25,000.50')->set('joinedOn', '2026-01-15')
-            ->call('save')->assertHasNoErrors()->assertRedirect(route('admin.employees.index'));
-        $employee = Employee::sole();
-        $this->assertSame($company->id, $employee->company_id);
-        $this->assertSame('E-01', $employee->employee_code);
-        $this->assertSame(2500050, $employee->monthly_salary);
-        $this->assertSame('2026-01-15', $employee->joined_on->toDateString());
-        $this->assertTrue($employee->is_active);
-        $this->get('/admin/employees')->assertOk()->assertSee('Rahim Uddin')->assertSee('৳25,000.50');
+        $user = User::factory()->create(['role' => $role]);
+        $user->companies()->attach(array_map(fn (Company $company): int => $company->id, $companies));
+        $user->syncParties();
+
+        return $user;
     }
 
-    public function test_required_fields_and_salary_format_are_validated(): void
+    public function test_employee_is_created_as_a_login_with_details_and_a_party_in_each_assigned_company(): void
     {
-        Company::factory()->create();
+        [$first, $second, $unassigned] = Company::factory()->count(3)->create();
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class)->set('monthlySalary', '25000.505')->call('save')
-            ->assertHasErrors(['employeeCode' => 'required', 'name' => 'required'])
+
+        Livewire::test(Form::class)->set('name', ' Rahim Uddin ')->set('email', ' Rahim@Example.com ')
+            ->set('password', self::PASSWORD)->set('password_confirmation', self::PASSWORD)
+            ->set('employeeCode', ' E-01 ')->set('designation', ' Driver ')->set('department', '   ')->set('phone', '01711-000000')
+            ->set('monthlySalary', '25,000.50')->set('joinedOn', '2026-01-15')->set('companyIds', [(string) $first->id, (string) $second->id])
+            ->call('save')->assertHasNoErrors()->assertRedirect(route('admin.users.index'));
+
+        $employee = User::where('email', 'rahim@example.com')->sole();
+        $this->assertSame(['Rahim Uddin', 'E-01', 'Driver', null, '01711-000000', 25_000_50, '2026-01-15', 'data-entry'],
+            [$employee->name, $employee->employee_code, $employee->designation, $employee->department, $employee->phone,
+                $employee->monthly_salary, $employee->joined_on->toDateString(), $employee->role]);
+        $this->assertTrue(Hash::check(self::PASSWORD, $employee->password));
+        $this->assertEqualsCanonicalizing([$first->id, $second->id], $employee->parties()->pluck('company_id')->all());
+        foreach ($employee->parties as $party) {
+            $this->assertSame(['Rahim Uddin', '01711-000000', true], [$party->name, $party->phone, $party->is_active]);
+        }
+        $this->assertFalse(Party::where('company_id', $unassigned->id)->exists());
+        $this->get('/admin/users')->assertOk()->assertSee('Rahim Uddin')->assertSee('৳25,000.50');
+    }
+
+    public function test_login_details_are_required_and_salary_and_code_are_validated(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'owner']));
+        User::factory()->create()->forceFill(['employee_code' => 'E-01'])->save();
+
+        Livewire::test(Form::class)->set('monthlySalary', '25000.505')->set('employeeCode', 'E-01')->call('save')
+            ->assertHasErrors(['name' => 'required', 'email' => 'required', 'password' => 'required', 'employeeCode' => 'unique'])
             ->assertSee('Enter an amount in taka with up to two decimals, e.g. 25,000.50.');
-        $this->assertDatabaseCount('employees', 0);
+        $this->assertSame(2, User::count());
     }
 
-    public function test_employee_code_is_unique_per_company(): void
+    public function test_parties_follow_the_employee_and_are_deactivated_not_deleted_when_a_company_is_removed(): void
     {
         [$first, $second] = Company::factory()->count(2)->create();
-        Employee::factory()->for($first)->create(['employee_code' => 'E-01']);
+        $employee = $this->employee('data-entry', $first, $second);
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        session([CompanyContext::SESSION_KEY => $first->id]);
-        Livewire::test(Form::class)->set('employeeCode', 'E-01')->set('name', 'Duplicate')
-            ->call('save')->assertHasErrors(['employeeCode' => 'unique']);
+
+        Livewire::test(Form::class, ['user' => $employee])->assertSet('monthlySalary', '0.00')
+            ->set('name', 'Renamed')->set('phone', '01800-111111')->set('monthlySalary', '18000')->set('companyIds', [(string) $first->id])
+            ->call('save')->assertHasNoErrors();
+        $parties = $employee->parties()->get()->keyBy('company_id');
+        $this->assertCount(2, $parties);
+        $this->assertSame(['Renamed', '01800-111111', true], [$parties[$first->id]->name, $parties[$first->id]->phone, $parties[$first->id]->is_active]);
+        $this->assertFalse($parties[$second->id]->is_active);
+        $this->assertSame(18_000_00, $employee->fresh()->monthly_salary);
+
+        Livewire::test(Form::class, ['user' => $employee])->set('companyIds', [(string) $first->id, (string) $second->id])->call('save')->assertHasNoErrors();
+        $this->assertSame([true, true], $employee->parties()->orderBy('company_id')->pluck('is_active')->all());
+        $this->assertSame(2, Party::count());
+
+        Livewire::test(Form::class, ['user' => $employee])->set('isActive', false)->call('save')->assertHasNoErrors();
+        $this->assertSame([false, false], $employee->parties()->pluck('is_active')->all());
+    }
+
+    public function test_the_super_admin_has_no_party_and_is_not_editable_here(): void
+    {
+        $company = Company::factory()->create();
+        $root = User::factory()->create(['role' => 'owner']);
+        $root->companies()->attach($company);
+        $root->syncParties();
+        $this->assertSame(0, Party::count());
+
+        $this->actingAs($this->employee('administrator'));
+        $this->get('/admin/users')->assertOk()->assertDontSee($root->email);
+        $this->get('/admin/users/'.$root->id.'/edit')->assertForbidden();
+    }
+
+    public function test_accountant_manages_employees_of_its_companies_and_creates_them_without_raising_roles(): void
+    {
+        [$assigned, $other] = Company::factory()->count(2)->create();
+        $mine = $this->employee('data-entry', $assigned);
+        $hidden = $this->employee('data-entry', $other);
+        $accountant = $this->employee('accountant', $assigned);
+        $this->actingAs($accountant);
+
+        $this->get('/admin/users')->assertOk()->assertSee($mine->name)->assertDontSee($hidden->name);
+        $this->get('/admin/users/'.$mine->id.'/edit')->assertOk();
+        $this->get('/admin/users/'.$hidden->id.'/edit')->assertNotFound();
+
+        $create = fn () => Livewire::test(Form::class)->set('name', 'New Clerk')->set('email', 'clerk@example.com')
+            ->set('password', self::PASSWORD)->set('password_confirmation', self::PASSWORD);
+        $create()->set('companyIds', [(string) $other->id])->call('save')->assertHasErrors('companyIds.0');
+        $create()->set('role', 'administrator')->set('companyIds', [(string) $assigned->id])->call('save')->assertForbidden();
+        $create()->set('companyIds', [(string) $assigned->id])->call('save')->assertHasNoErrors();
+        $this->assertSame([$assigned->id], User::where('email', 'clerk@example.com')->sole()->parties()->pluck('company_id')->all());
+    }
+
+    public function test_salary_is_shown_only_to_those_who_can_edit_employees(): void
+    {
+        $company = Company::factory()->create();
+        $employee = $this->employee('data-entry', $company);
+        $employee->forceFill(['monthly_salary' => 42_000_00])->save();
+
+        $this->actingAs($this->employee('accountant', $company));
+        $this->get('/admin/users')->assertOk()->assertSee($employee->name)->assertSee('৳42,000.00');
+
+        $viewer = $this->employee('accountant', $company);
+        $viewer->forceFill(['denied_permissions' => ['users.update']])->save();
+        $this->actingAs($viewer->fresh());
+        $this->get('/admin/users')->assertOk()->assertSee($employee->name)->assertDontSee('৳42,000.00')->assertDontSee('Monthly salary');
+    }
+
+    public function test_header_company_narrows_the_list_to_its_and_unassigned_employees_and_data_entry_cannot_open_it(): void
+    {
+        [$first, $second] = Company::factory()->count(2)->create();
+        $inFirst = $this->employee('data-entry', $first);
+        $inSecond = $this->employee('data-entry', $second);
+        $newStarter = $this->employee('data-entry');
+        $this->actingAs($this->employee('administrator'));
+
+        Livewire::test(Index::class)->assertSee($inFirst->name)->assertSee($inSecond->name);
         session([CompanyContext::SESSION_KEY => $second->id]);
-        Livewire::test(Form::class)->set('employeeCode', 'E-01')->set('name', 'Other company')
-            ->call('save')->assertHasNoErrors();
-        $this->assertSame(1, Employee::where('company_id', $second->id)->count());
+        Livewire::test(Index::class)->assertDontSee($inFirst->name)->assertSee($inSecond->name)->assertSee($newStarter->name)
+            ->set('status', 'inactive')->assertDontSee($inSecond->name);
+
+        $this->actingAs($inFirst);
+        $this->get('/admin/users')->assertForbidden();
+        $this->get('/admin/users/create')->assertForbidden();
     }
 
-    public function test_editing_shows_salary_in_taka_and_keeps_the_company(): void
-    {
-        [$company, $other] = Company::factory()->count(2)->create();
-        $employee = Employee::factory()->for($company)->create(['monthly_salary' => 1500000]);
-        $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class, ['employee' => $employee])->assertSet('monthlySalary', '15000.00')
-            ->set('monthlySalary', '18000')->set('isActive', false)->call('save')->assertHasNoErrors();
-        $employee->refresh();
-        $this->assertSame($company->id, $employee->company_id);
-        $this->assertSame(1800000, $employee->monthly_salary);
-        $this->assertFalse($employee->is_active);
-    }
-
-    public function test_accountant_only_lists_and_opens_employees_of_assigned_companies(): void
-    {
-        [$assigned, $other] = Company::factory()->count(2)->create();
-        $mine = Employee::factory()->for($assigned)->create(['name' => 'Assigned Worker']);
-        $hidden = Employee::factory()->for($other)->create(['name' => 'Hidden Worker']);
-        $accountant = User::factory()->create(['role' => 'accountant']);
-        $accountant->companies()->attach($assigned);
-        $this->actingAs($accountant);
-
-        $this->get('/admin/employees')->assertOk()->assertSee('Assigned Worker')->assertDontSee('Hidden Worker')->assertDontSee($other->name);
-        session([CompanyContext::SESSION_KEY => $other->id]);
-        Livewire::test(Index::class)->assertSee('Assigned Worker')->assertDontSee('Hidden Worker');
-        $this->get('/admin/employees/'.$mine->id.'/edit')->assertOk();
-        $this->get('/admin/employees/'.$hidden->id.'/edit')->assertNotFound();
-    }
-
-    public function test_accountant_creates_employees_in_its_pinned_company_and_cannot_move_them(): void
-    {
-        [$assigned, $other] = Company::factory()->count(2)->create();
-        $employee = Employee::factory()->for($assigned)->create();
-        $accountant = User::factory()->create(['role' => 'accountant']);
-        $accountant->companies()->attach($assigned);
-        $this->actingAs($accountant);
-
-        session([CompanyContext::SESSION_KEY => $other->id]);
-        Livewire::test(Form::class)->assertSet('companyId', $assigned->id)->set('employeeCode', 'X-1')->set('name', 'Mine')->call('save')->assertHasNoErrors();
-        $this->assertDatabaseHas('employees', ['name' => 'Mine', 'company_id' => $assigned->id]);
-
-        Livewire::test(Form::class, ['employee' => $employee])->call('save')->assertHasNoErrors();
-        $this->assertSame($assigned->id, $employee->fresh()->company_id);
-    }
-
-    public function test_text_inputs_are_trimmed_and_joining_date_is_stored_as_a_plain_date(): void
+    public function test_admin_pages_render_for_the_super_admin_and_accountant(): void
     {
         $company = Company::factory()->create();
-        $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class)->set('employeeCode', 'E-02')->set('name', '  Karim  ')
-            ->set('designation', ' Clerk ')->set('department', '   ')->set('monthlySalary', ' 100 ')->set('joinedOn', '2026-03-01')
-            ->call('save')->assertHasNoErrors();
-        $this->assertDatabaseHas('employees', ['name' => 'Karim', 'designation' => 'Clerk', 'department' => null, 'monthly_salary' => 10000, 'joined_on' => '2026-03-01']);
-    }
-
-    public function test_data_entry_can_view_but_not_manage_employees(): void
-    {
-        $company = Company::factory()->create();
-        $employee = Employee::factory()->for($company)->create();
-        $user = User::factory()->create(['role' => 'data-entry']);
-        $user->companies()->attach($company);
-        $this->actingAs($user);
-        $this->get('/admin/employees')->assertOk()->assertDontSee(route('admin.employees.create'));
-        $this->get('/admin/employees/create')->assertForbidden();
-        $this->get('/admin/employees/'.$employee->id.'/edit')->assertForbidden();
-    }
-
-    public function test_owned_admin_pages_render_for_owner_and_accountant(): void
-    {
-        $company = Company::factory()->create();
-        $employee = Employee::factory()->for($company)->create();
-        $member = User::factory()->create(['role' => 'accountant']);
-        $member->companies()->attach($company);
+        $member = $this->employee('data-entry', $company);
 
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        foreach (['/admin/companies', '/admin/companies/create', '/admin/companies/'.$company->id.'/edit', '/admin/employees', '/admin/employees/create',
-            '/admin/employees/'.$employee->id.'/edit', '/admin/users', '/admin/users/create', '/admin/users/'.$member->id.'/edit'] as $path) {
+        foreach (['/admin/companies', '/admin/companies/'.$company->id.'/edit', '/admin/users', '/admin/users/create', '/admin/users/'.$member->id.'/edit'] as $path) {
             $this->get($path)->assertOk();
         }
 
-        $this->actingAs($member);
-        foreach (['/admin/companies', '/admin/employees', '/admin/employees/create', '/admin/employees/'.$employee->id.'/edit'] as $path) {
+        $this->actingAs($this->employee('accountant', $company));
+        foreach (['/admin/companies', '/admin/users', '/admin/users/create', '/admin/users/'.$member->id.'/edit'] as $path) {
             $this->get($path)->assertOk();
         }
-        foreach (['/admin/companies/create', '/admin/users', '/admin/users/create'] as $path) {
-            $this->get($path)->assertForbidden();
-        }
+        $this->get('/admin/employees')->assertNotFound();
     }
 }

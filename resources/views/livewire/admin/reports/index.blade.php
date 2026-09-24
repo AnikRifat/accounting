@@ -1,15 +1,16 @@
-<div>
-    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ __('Reports') }}</h1><p class="muted">{{ __('Figures include posted entries only; voided entries never count.') }}</p></div></div>
-    <div class="grid gap-4 sm:grid-cols-2">
+@php($emojis = ['reports.income-statement' => '📈', 'reports.trial-balance' => '⚖️', 'reports.account-ledger' => '📒', 'reports.dues' => '⏳', 'reports.party-statement' => '🤝', 'reports.employee-cost' => '👥'])
+<div class="page">
+    <x-page-header :title="__('Reports')" :description="__('Figures include posted entries only; voided entries never count.')" />
+    <div class="quick-actions">
         @foreach($reports as $route => [$ability, $title, $description])
-            <a class="panel report-card" href="{{ route('admin.'.$route) }}" wire:key="report-{{ $route }}" wire:navigate><h2>{{ $title }}</h2><p class="muted">{{ $description }}</p></a>
+            <a class="card report-card" href="{{ route('admin.'.$route) }}" wire:key="report-{{ $route }}" wire:navigate><span class="report-card-emoji" aria-hidden="true">{{ $emojis[$route] ?? '📄' }}</span><h2>{{ $title }}</h2><p>{{ $description }}</p></a>
         @endforeach
     </div>
     @if($advanced !== [])
-        <h2 class="spacer">{{ __('Advanced') }}</h2>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <h2 class="mt-2">{{ __('Advanced') }}</h2>
+        <div class="quick-actions">
             @foreach($advanced as $route => [$ability, $title, $description])
-                <a class="panel report-card" href="{{ route('admin.'.$route) }}" wire:key="advanced-{{ $route }}" wire:navigate><h2>{{ $title }}</h2><p class="muted">{{ $description }}</p></a>
+                <a class="card report-card" href="{{ route('admin.'.$route) }}" wire:key="advanced-{{ $route }}" wire:navigate><span class="report-card-emoji" aria-hidden="true">{{ $emojis[$route] ?? '📄' }}</span><h2>{{ $title }}</h2><p>{{ $description }}</p></a>
             @endforeach
         </div>
     @endif

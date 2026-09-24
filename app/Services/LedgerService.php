@@ -107,7 +107,7 @@ class LedgerService
      *
      * Income/expense data: entry_date (Y-m-d), amount (total, paisa), paid_amount (0…amount),
      * category_account_id, payment_account_id (required when paid_amount > 0), party_id and due_date
-     * (both required when paid_amount < amount), description?, reference?.
+     * (both required when paid_amount < amount), paid_by? (user id; see payerId()), description?, reference?.
      * Transfer/opening data: entry_date, amount, debit_account_id, credit_account_id, description?, reference?.
      *
      * @param  array<string, mixed>  $data
@@ -126,7 +126,7 @@ class LedgerService
             $entry = (new JournalEntry)->forceFill([
                 'company_id' => $locked->id, 'type' => $type, 'number' => $this->nextNumber($locked), 'created_by' => $actor->id,
             ]);
-            $this->post($entry, $data);
+            $this->post($entry, $data, $actor);
 
             return $entry;
         });
@@ -163,7 +163,7 @@ class LedgerService
                 'company_id' => $company->id, 'bill_id' => $lockedBill->id, 'number' => $this->nextNumber($company), 'created_by' => $actor->id,
                 'type' => $lockedBill->type === EntryType::Income ? EntryType::Receipt : EntryType::Payment,
             ]);
-            $this->post($entry, $data);
+            $this->post($entry, $data, $actor);
 
             return $entry;
         });
@@ -192,7 +192,7 @@ class LedgerService
                 throw ValidationException::withMessages(['entry' => __('Voided entries cannot be edited.')]);
             }
             $locked->updated_by = $actor->id;
-            $this->post($locked, $data);
+            $this->post($locked, $data, $actor);
 
             return $locked;
         });
@@ -352,11 +352,11 @@ class LedgerService
     }
 
     /** Validates the data for the entry's type, then writes the entry and its lines and checks the balance. */
-    private function post(JournalEntry $entry, array $data): void
+    private function post(JournalEntry $entry, array $data, User $actor): void
     {
         $keep = $entry->exists ? $entry->lines()->pluck('account_id')->map(fn (mixed $value): int => (int) $value)->all() : [];
         [$attributes, $lines] = match (true) {
-            $entry->type->isBill() => $this->billPosting($entry, $data, $keep),
+            $entry->type->isBill() => $this->billPosting($entry, $data, $keep, $actor),
             $entry->type->isSettlement() => $this->settlementPosting($entry, $data, $keep),
             default => $this->simplePosting($entry, $data, $keep),
         };
@@ -374,7 +374,7 @@ class LedgerService
      * @param  list<int>  $keep  accounts already on the entry, which stay valid even if since deactivated
      * @return array{0: array<string, mixed>, 1: list<array{account_id: int, debit: int, credit: int}>}
      */
-    private function billPosting(JournalEntry $entry, array $data, array $keep): array
+    private function billPosting(JournalEntry $entry, array $data, array $keep, User $actor): array
     {
         $data = $this->validate($data, [
             'amount' => ['required', 'integer', 'min:1', 'max:'.self::MAX_AMOUNT],
@@ -383,6 +383,7 @@ class LedgerService
             'payment_account_id' => ['nullable', 'integer'],
             'party_id' => ['nullable', 'integer'],
             'due_date' => ['nullable', 'date_format:Y-m-d'],
+            'paid_by' => ['nullable', 'integer'],
         ]);
         $income = $entry->type === EntryType::Income;
         [$total, $paid] = [(int) $data['amount'], (int) $data['paid_amount']];
@@ -399,6 +400,7 @@ class LedgerService
                 fn (Account $account): bool => $account->isPaymentMethod(), __('Choose a payment method.'));
         }
         $partyId = $this->partyId($entry, $data['party_id'] ?? null, $errors);
+        $payerId = $paid > 0 ? $this->payerId($entry, $data['paid_by'] ?? null, $actor, $errors) : null;
         if ($unpaid > 0) {
             if ($partyId === null && ! isset($errors['party_id'])) {
                 $errors['party_id'] = __('Choose who owes or is owed the unpaid amount.');
@@ -433,7 +435,7 @@ class LedgerService
         }
 
         return [['entry_date' => $data['entry_date'], 'amount' => $total, 'party_id' => $partyId,
-            'due_date' => $unpaid > 0 ? $data['due_date'] : null], $lines];
+            'due_date' => $unpaid > 0 ? $data['due_date'] : null, 'paid_by' => $payerId], $lines];
     }
 
     /**
@@ -550,6 +552,28 @@ class LedgerService
     }
 
     /**
+     * Who paid or received the money. Only the super admin chooses, defaulting to themselves; anyone
+     * else records it as themselves, and their edits keep the payer already on the entry.
+     *
+     * @param  array<string, string>  $errors
+     */
+    private function payerId(JournalEntry $entry, mixed $payerId, User $actor, array &$errors): ?int
+    {
+        $current = $entry->getOriginal('paid_by') ?? $actor->id;
+        if (! $actor->isRoot() || $payerId === null || (int) $payerId === (int) $current) {
+            return (int) $current;
+        }
+        $payer = User::query()->find($payerId);
+        if ($payer === null || ! $payer->is_active || ! $payer->hasPermission('admin.access') || ! $payer->canAccessCompany($entry->company_id)) {
+            $errors['paid_by'] = __('Choose an active user with access to this company.');
+
+            return null;
+        }
+
+        return $payer->id;
+    }
+
+    /**
      * Validates the fields every entry shares plus the given type-specific rules.
      *
      * @param  array<string, list<mixed>>  $rules
@@ -567,7 +591,7 @@ class LedgerService
             'credit_account_id.different' => __('Choose two different accounts.'),
         ], [
             'entry_date' => __('date'), 'amount' => __('amount'), 'paid_amount' => __('paid now'), 'category_account_id' => __('category'),
-            'payment_account_id' => __('payment method'), 'party_id' => __('party'), 'due_date' => __('due date'),
+            'payment_account_id' => __('payment method'), 'party_id' => __('party'), 'due_date' => __('due date'), 'paid_by' => __('paid by'),
             'debit_account_id' => __('account'), 'credit_account_id' => __('account'), 'description' => __('description'), 'reference' => __('reference'),
         ])->validate();
     }

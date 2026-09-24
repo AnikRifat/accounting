@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasMedia;
 use App\Enums\AccountType;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
@@ -21,11 +22,14 @@ use Illuminate\Support\Facades\DB;
  * never deleted, only voided. Income and expense entries are bills: `amount` is their total and any
  * unpaid part sits on Accounts Receivable/Payable until receipts or payments (`bill_id`) settle it.
  */
-#[Fillable(['entry_date', 'amount', 'description', 'reference', 'party_id', 'due_date'])]
+#[Fillable(['entry_date', 'amount', 'description', 'reference', 'party_id', 'due_date', 'paid_by'])]
 class JournalEntry extends Model
 {
+    /** Media collection of the optional voucher, invoice or receipt file. */
+    public const REFERENCE_FILE = 'reference';
+
     /** @use HasFactory<JournalEntryFactory> */
-    use HasFactory;
+    use HasFactory, HasMedia;
 
     protected function casts(): array
     {
@@ -69,6 +73,12 @@ class JournalEntry extends Model
     public function settlements(): HasMany
     {
         return $this->hasMany(self::class, 'bill_id');
+    }
+
+    /** Who paid (expense) or received (income) the money paid now on a bill. */
+    public function payer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paid_by');
     }
 
     public function creator(): BelongsTo

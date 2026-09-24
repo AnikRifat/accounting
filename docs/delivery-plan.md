@@ -172,7 +172,7 @@ Rules:
   - Employee cost is based on employee parties and also requires `employees.view`;
   - the dashboard adds total receivable, total payable, overdue count and the next 5 dues.
 
-## Pending increment 8: employees become users (Anik, 2026-09-24; relayed by session frish-5f, which implements it after increment 7)
+## Increment 8: employees become users (Anik, 2026-09-24; relayed and implemented by session frish-5f)
 
 - Every employee is a user and must log in. The separate Employees module, model, migration,
   `employees.*` permissions and tests are removed.
@@ -271,7 +271,7 @@ Rules for every module:
 | 7e | New company from the header (Anik): "+ New company" beside the switcher and "Add company" on the Companies list both open one off-canvas drawer (`App\Livewire\CreateCompanyDrawer`, event `open-create-company`); shared `Company::formRules()` / `Company::createBy()` | coordinator | done: 2 tests; switches the header to the new company |
 | 6-mysql | Rebuild local MySQL `frish` with `migrate:fresh --seed` (Anik approved 2026-09-24) and re-check the dues queries on MySQL | coordinator | done: 589 entries balanced (2–3 lines each), all 4 trial balances balance, AR/AP equal dues totals per company, 13 pages render in All and single-company mode on MySQL 9.7 |
 | 7-review | Read-only review of increments 5 and 7 (excluding increment 8 areas) | agent `review-5-7` | in progress |
-| 8 | Employees become users | session frish-5f | started after increment 7 |
+| 8 | Employees become users (staff fields on `users`, one party per assigned company via `User::syncParties()`, single super admin via `Gate::before`, editable system roles) | session frish-5f | done (commit 20607fc); 177/178 green; the 1 failure is DemoSeederTest asserting the owner password is not 'password', which conflicts with Anik's local edit setting the demo password to 'password' |
 | 6 | Final review, behavior verification, handover (AGENTS.md and README done; refresh for increment 5) | coordinator + agents | last |
 
 ## Acceptance criteria

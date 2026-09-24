@@ -1,10 +1,14 @@
-<div>
+<div class="page">
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Configuration') }}</p><h1>{{ __('Application settings') }}</h1><p class="muted">{{ __('Manage application configuration. Storage credentials stay in environment configuration.') }}</p></div></div>
-    <form wire:submit="save"><div class="panel stack">
-        <x-form.input name="appName" :label="__('Application name')" wire:model="appName" required maxlength="80" />
-        <x-form.input name="supportEmail" :label="__('Support email')" type="email" wire:model="supportEmail" />
-        <x-form.checkbox name="registrationEnabled" :label="__('Allow public account registration')" wire:model="registrationEnabled" />
-        @can('settings.update')<div><button class="btn" type="submit" wire:loading.attr="disabled">{{ __('Save settings') }}</button><span class="muted ml-3" wire:loading>{{ __('Saving…') }}</span></div>@endcan
-    </div></form>
+    <x-page-header :title="__('Application settings')" :description="__('Manage application configuration. Storage credentials stay in environment configuration.')" />
+    <form wire:submit="save" class="stack">
+        <x-card :title="__('General')">
+            <div class="form-grid">
+                <x-form.input name="appName" :label="__('Application name')" wire:model="appName" required maxlength="80" />
+                <x-form.input name="supportEmail" :label="__('Support email')" type="email" wire:model="supportEmail" />
+            </div>
+            <x-form.checkbox name="registrationEnabled" :label="__('Allow public account registration')" wire:model="registrationEnabled" />
+        </x-card>
+        @can('settings.update')<x-form.actions :submit="__('Save settings')" />@endcan
+    </form>
 </div>

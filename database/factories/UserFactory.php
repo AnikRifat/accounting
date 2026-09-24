@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Company;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -31,6 +32,17 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
         ];
+    }
+
+    /**
+     * An employee (data-entry unless overridden) assigned to the given companies, with a party in each.
+     */
+    public function employeeOf(Company ...$companies): static
+    {
+        return $this->state(['role' => 'data-entry'])->afterCreating(function (User $user) use ($companies): void {
+            $user->companies()->attach(array_map(fn (Company $company): int => $company->id, $companies));
+            $user->syncParties();
+        });
     }
 
     /**

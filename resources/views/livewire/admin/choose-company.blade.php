@@ -1,12 +1,13 @@
-<div>
-    <div class="page-header"><div><p class="eyebrow">{{ __('Company') }}</p><h1>{{ __('Choose a company') }}</h1><p class="muted">{{ __('New records belong to one company. Pick it here; the header switches to that company.') }}</p></div></div>
-    <div class="panel stack">
+<div class="page">
+    <x-page-header :title="__('Choose a company')" :description="__('New records belong to one company. Pick it here; the header switches to that company.')" />
+    <x-card>
         @forelse($companies as $company)
-            <button type="button" class="btn btn-secondary company-choice" wire:key="choose-{{ $company->id }}" wire:click="choose({{ $company->id }})" wire:loading.attr="disabled">
-                <strong>{{ $company->name }}</strong> <span class="muted">{{ $company->code }}</span>
+            <button type="button" class="company-choice" wire:key="choose-{{ $company->id }}" wire:click="choose({{ $company->id }})" wire:loading.attr="disabled">
+                <span class="flex items-center gap-3"><span class="stat-icon" aria-hidden="true">🏢</span><strong class="text-heading">{{ $company->name }}</strong></span>
+                <x-badge>{{ $company->code }}</x-badge>
             </button>
         @empty
-            <p class="muted">{{ __('You have no active company to record into. Ask your administrator to assign you one.') }}</p>
+            <x-empty-state emoji="🏢" :title="__('No company to record into')" :description="__('You have no active company to record into. Ask your administrator to assign you one.')" />
         @endforelse
-    </div>
+    </x-card>
 </div>

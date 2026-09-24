@@ -1,55 +1,82 @@
-<div>
+<div class="page">
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ $title }}</h1><p class="muted">{{ __(':company · amounts are in taka (৳).', ['company' => $companyName]) }}</p></div></div>
+    <x-page-header :title="$title" :description="__(':company · amounts are in taka (৳).', ['company' => $companyName])" :back="route('admin.entries.index')" :back-label="__('Transactions')" />
     <form wire:submit="save" class="stack">
-        @error('entry')<p class="error" role="alert">{{ $message }}</p>@enderror
-        @if($type === 'opening')@error('creditAccountId')<p class="error" role="alert">{{ $message }}</p>@enderror @endif
-        @if($settled > 0)<p class="notice" role="status">{{ __(':amount has already been settled against this entry, so its party is fixed and the unpaid part can\'t go below that amount.', ['amount' => \App\Support\Money::format($settled)]) }}</p>@endif
-        <div class="panel"><div class="form-grid">
-            <x-form.input name="entryDate" :label="__('Date')" type="date" wire:model="entryDate" required />
-            @if($isBill)
-                <div class="field" wire:key="category-{{ $companyId }}">
-                    <x-form.select name="categoryAccountId" :label="__('Category')" wire:model="categoryAccountId" :options="$categories" :autofocus="! $entryId" />
-                    @can('accounts.manage')@if($canAdd)<button class="text-link justify-self-start" type="button" x-on:click="$wire.addingCategory = true">{{ __('+ Add a new category') }}</button>@endif @endcan
-                </div>
-                <div class="field" wire:key="party-{{ $companyId }}">
-                    <x-form.select name="partyId" :label="__('Party')" wire:model.live="partyId" :options="$parties" :disabled="$settled > 0" :help="__('Who paid, received or was spent on. Required when part of the amount is unpaid.')" />
-                    @can('parties.create')@if($settled === 0 && $canAdd)<button class="text-link justify-self-start" type="button" x-on:click="$wire.addingParty = true">{{ __('+ Add a new party') }}</button>@endif @endcan
-                </div>
-                <x-form.input name="amount" :label="__('Total amount (৳)')" wire:model.live.debounce.400ms="amount" required inputmode="decimal" autocomplete="off" :help="__('For example 1,25,000.50')" />
-                <x-form.input name="paidAmount" :label="$type === 'income' ? __('Received now (৳)') : __('Paid now (৳)')" wire:model.live.debounce.400ms="paidAmount" required inputmode="decimal" autocomplete="off" :help="__('Enter less than the total to record the rest as due.')" />
-                <div wire:key="method-{{ $companyId }}"><x-form.select name="paymentAccountId" :label="__('Payment method')" wire:model="paymentAccountId" :options="$methods" /></div>
-                @if($showDue)
-                    <x-form.input name="dueDate" :label="__('Due date for the rest')" type="date" wire:model="dueDate" required />
+        @error('entry')<x-alert tone="danger">{{ $message }}</x-alert>@enderror
+        @if($type === 'opening')@error('creditAccountId')<x-alert tone="danger">{{ $message }}</x-alert>@enderror @endif
+        @if($settled > 0)<x-alert tone="warning">{{ __(':amount has already been settled against this entry, so its party is fixed and the unpaid part can\'t go below that amount.', ['amount' => \App\Support\Money::format($settled)]) }}</x-alert>@endif
+        <x-card :title="__('Entry details')">
+            <div class="form-grid">
+                <x-form.input name="entryDate" :label="__('Date')" type="date" wire:model="entryDate" required />
+                @if($isBill)
+                    <div class="stack-sm" wire:key="category-{{ $companyId }}">
+                        <x-form.select name="categoryAccountId" :label="__('Category')" wire:model="categoryAccountId" :options="$categories" :autofocus="! $entryId" />
+                        @can('accounts.manage')@if($canAdd)<button class="text-link justify-self-start text-sm" type="button" x-on:click="$wire.addingCategory = true">{{ __('+ Add a new category') }}</button>@endif @endcan
+                    </div>
+                    <div class="stack-sm" wire:key="party-{{ $companyId }}">
+                        <x-form.select name="partyId" :label="__('Party')" wire:model.live="partyId" :options="$parties" :disabled="$settled > 0" :help="__('Who paid, received or was spent on. Required when part of the amount is unpaid.')" />
+                        @can('parties.create')@if($settled === 0 && $canAdd)<button class="text-link justify-self-start text-sm" type="button" x-on:click="$wire.addingParty = true">{{ __('+ Add a new party') }}</button>@endif @endcan
+                    </div>
+                @else
+                    @if($type === 'transfer')
+                        <div wire:key="from-{{ $companyId }}"><x-form.select name="creditAccountId" :label="__('From')" wire:model="creditAccountId" :options="$methods" :autofocus="! $entryId" /></div>
+                    @endif
+                    <div wire:key="to-{{ $companyId }}"><x-form.select name="debitAccountId" :label="$type === 'transfer' ? __('To') : __('Payment method')" wire:model="debitAccountId" :options="$methods" /></div>
+                    <x-form.input name="amount" :label="__('Amount (৳)')" wire:model="amount" required inputmode="decimal" autocomplete="off" :help="__('For example 1,25,000.50')" />
                 @endif
-            @else
-                @if($type === 'transfer')
-                    <div wire:key="from-{{ $companyId }}"><x-form.select name="creditAccountId" :label="__('From')" wire:model="creditAccountId" :options="$methods" :autofocus="! $entryId" /></div>
-                @endif
-                <div wire:key="to-{{ $companyId }}"><x-form.select name="debitAccountId" :label="$type === 'transfer' ? __('To') : __('Payment method')" wire:model="debitAccountId" :options="$methods" /></div>
-                <x-form.input name="amount" :label="__('Amount (৳)')" wire:model="amount" required inputmode="decimal" autocomplete="off" :help="__('For example 1,25,000.50')" />
-            @endif
-            <x-form.input name="reference" :label="__('Reference')" wire:model="reference" maxlength="100" :help="__('Voucher, invoice or cheque number.')" />
-            <x-form.input name="description" :label="__('Description')" wire:model="description" maxlength="500" />
-        </div></div>
-        <div class="actions">
-            <button class="btn" type="submit" wire:loading.attr="disabled">{{ __('Save entry') }}</button>
-            @unless($entryId)<button class="btn btn-secondary" type="button" wire:click="save(true)" wire:loading.attr="disabled">{{ __('Save & add another') }}</button>@endunless
-            <a class="btn btn-secondary" href="{{ route('admin.entries.index') }}" wire:navigate>{{ __('Cancel') }}</a><span class="muted" wire:loading>{{ __('Saving…') }}</span>
-        </div>
+            </div>
+        </x-card>
+        @if($isBill)
+            <x-card :title="__('Payment')" :description="__('Enter less than the total to record the rest as due.')">
+                <div class="form-grid">
+                    <x-form.input name="amount" :label="__('Total amount (৳)')" wire:model.live.debounce.400ms="amount" required inputmode="decimal" autocomplete="off" :help="__('For example 1,25,000.50')" />
+                    <x-form.input name="paidAmount" :label="$type === 'income' ? __('Received now (৳)') : __('Paid now (৳)')" wire:model.live.debounce.400ms="paidAmount" required inputmode="decimal" autocomplete="off" />
+                    <div wire:key="method-{{ $companyId }}"><x-form.select name="paymentAccountId" :label="__('Payment method')" wire:model="paymentAccountId" :options="$methods" /></div>
+                    @if($showDue)
+                        <x-form.input name="dueDate" :label="__('Due date for the rest')" type="date" wire:model="dueDate" required />
+                    @endif
+                    @if($showPayer)
+                        @if($canChoosePayer)
+                            <div wire:key="payer-{{ $companyId }}"><x-form.select name="paidBy" :label="$type === 'income' ? __('Received by') : __('Paid by')" wire:model="paidBy" :options="$payers" :help="__('Who handed over or took the money.')" /></div>
+                        @else
+                            <x-form.input name="payerName" :label="$type === 'income' ? __('Received by') : __('Paid by')" :value="$payerName" disabled :help="$paidBy === (string) auth()->id() ? __('Recorded as you. Only the super admin can change it.') : __('Only the super admin can change it.')" />
+                        @endif
+                    @endif
+                </div>
+            </x-card>
+        @endif
+        <x-card :title="__('Reference')">
+            <div class="form-grid">
+                <x-form.input name="reference" :label="__('Reference number')" wire:model="reference" maxlength="100" :help="__('Voucher, invoice or cheque number.')" />
+                <x-form.input name="description" :label="__('Description')" wire:model="description" maxlength="500" />
+                <div class="stack-sm span-full">
+                    <x-form.input name="referenceFile" :label="__('Voucher, invoice or receipt file')" type="file" wire:model="referenceFile" accept=".jpg,.jpeg,.png,.webp,.pdf" :help="__('Optional. JPG, PNG, WebP or PDF.')" />
+                    <p class="muted" wire:loading wire:target="referenceFile">{{ __('Uploading…') }}</p>
+                    @if($currentFile)
+                        <div class="flex flex-wrap items-center gap-3">
+                            <a class="text-link inline-flex items-center gap-1" href="{{ $currentFileUrl }}" target="_blank" rel="noopener"><x-icon name="external" width="14" height="14" />{{ $currentFile->filename }}</a>
+                            @if($referenceFile)<span class="muted">{{ __('The new file replaces it when you save.') }}</span>@else<x-form.checkbox name="removeReferenceFile" :label="__('Remove the current file')" wire:model="removeReferenceFile" />@endif
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </x-card>
+        <x-form.actions :submit="__('Save entry')" :cancel="route('admin.entries.index')">
+            @unless($entryId)<x-button variant="secondary" wire:click="save(true)" wire:loading.attr="disabled">{{ __('Save & add another') }}</x-button>@endunless
+        </x-form.actions>
     </form>
     @if($isBill && $canAdd)
         @can('accounts.manage')
             <x-drawer id="add-category" wire:model="addingCategory" submit="addCategory" :title="$type === 'income' ? __('New income category') : __('New expense category')" :description="__('Adds the category to :company and selects it.', ['company' => $companyName])">
                 <x-form.input name="newCategoryName" :label="__('Category name')" wire:model="newCategoryName" required maxlength="150" autocomplete="off" autofocus />
-                <x-slot:footer><button class="btn" type="submit" wire:loading.attr="disabled" wire:target="addCategory">{{ __('Add category') }}</button><button class="btn btn-secondary" type="button" x-on:click="open = false">{{ __('Cancel') }}</button></x-slot:footer>
+                <x-slot:footer><x-button type="submit" wire:loading.attr="disabled" wire:target="addCategory">{{ __('Add category') }}</x-button><x-button variant="ghost" x-on:click="open = false">{{ __('Cancel') }}</x-button></x-slot:footer>
             </x-drawer>
         @endcan
         @can('parties.create')@if($settled === 0)
             <x-drawer id="add-party" wire:model="addingParty" submit="addParty" :title="__('New party')" :description="__('Adds the party to :company and selects it.', ['company' => $companyName])">
                 <x-form.input name="newPartyName" :label="__('Party name')" wire:model="newPartyName" required maxlength="150" autocomplete="off" autofocus />
                 <x-form.input name="newPartyPhone" :label="__('Phone')" type="tel" wire:model="newPartyPhone" maxlength="40" autocomplete="off" />
-                <x-slot:footer><button class="btn" type="submit" wire:loading.attr="disabled" wire:target="addParty">{{ __('Add party') }}</button><button class="btn btn-secondary" type="button" x-on:click="open = false">{{ __('Cancel') }}</button></x-slot:footer>
+                <x-slot:footer><x-button type="submit" wire:loading.attr="disabled" wire:target="addParty">{{ __('Add party') }}</x-button><x-button variant="ghost" x-on:click="open = false">{{ __('Cancel') }}</x-button></x-slot:footer>
             </x-drawer>
         @endif @endcan
     @endif

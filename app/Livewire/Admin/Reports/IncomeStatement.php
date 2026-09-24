@@ -38,12 +38,13 @@ class IncomeStatement extends Component
         $sections = [];
         $totals = [];
         foreach ([AccountType::Income, AccountType::Expense] as $type) {
-            $rows = $activity->where('type', $type->value)->groupBy('name')->map(function ($accounts, string $name) use ($type): array {
+            // Same merge key as the chart of accounts and categories: case and surrounding spaces are ignored.
+            $rows = $activity->where('type', $type->value)->groupBy(fn (object $line): string => mb_strtolower(trim($line->name)))->map(function ($accounts) use ($type): array {
                 $amounts = $accounts->groupBy('company_id')->map(fn ($lines): int => $lines->sum(fn (object $line): int => $type === AccountType::Income
                     ? (int) $line->credit_total - (int) $line->debit_total
                     : (int) $line->debit_total - (int) $line->credit_total))->all();
 
-                return ['code' => $accounts->min('code'), 'name' => $name, 'amounts' => $amounts, 'total' => array_sum($amounts)];
+                return ['code' => $accounts->min('code'), 'name' => $accounts->sortBy('code')->first()->name, 'amounts' => $amounts, 'total' => array_sum($amounts)];
             })->sortBy([['code', 'asc'], ['name', 'asc']])->values();
             $sections[$type->value] = $rows;
             $totals[$type->value] = $columns->mapWithKeys(fn (Company $company): array => [$company->id => $rows->sum(fn (array $row): int => $row['amounts'][$company->id] ?? 0)])->all();

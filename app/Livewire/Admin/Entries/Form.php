@@ -8,8 +8,11 @@ use App\Enums\PaymentType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
+use App\Models\Media;
 use App\Models\Party;
+use App\Models\User;
 use App\Services\LedgerService;
+use App\Services\MediaService;
 use App\Support\CompanyContext;
 use App\Support\Money;
 use Closure;
@@ -21,14 +24,22 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\Features\SupportRedirects\Redirector;
+use Livewire\WithFileUploads;
 
 /** Records or edits income and expense (with partial payment), transfer and opening entries. */
 class Form extends Component
 {
+    use WithFileUploads;
+
+    /** File types accepted as a voucher, invoice or receipt. */
+    private const REFERENCE_FILE_TYPES = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+
     #[Locked]
     public ?int $entryId = null;
 
@@ -62,6 +73,13 @@ class Form extends Component
     public string $creditAccountId = '';
 
     public string $reference = '';
+
+    public ?TemporaryUploadedFile $referenceFile = null;
+
+    public bool $removeReferenceFile = false;
+
+    /** Who paid or received the money. Only the super admin can change it; LedgerService enforces that on save. */
+    public string $paidBy = '';
 
     public string $description = '';
 
@@ -98,6 +116,7 @@ class Form extends Component
         $this->companyId = $company->id;
         $this->entryDate = today()->toDateString();
         $this->paymentAccountId = $this->defaultPaymentMethod();
+        $this->paidBy = (string) auth()->id();
     }
 
     public function updatedAmount(): void
@@ -189,6 +208,7 @@ class Form extends Component
             'entryDate' => ['required', 'date_format:Y-m-d'],
             'amount' => ['required', 'string', $money(false)],
             'reference' => ['nullable', 'string', 'max:100'],
+            'referenceFile' => ['nullable', File::types(self::REFERENCE_FILE_TYPES)->max(config('media.max_size_kb'))],
             'description' => ['nullable', 'string', 'max:500'],
         ] + ($type->isBill() ? [
             'categoryAccountId' => ['required', 'integer'],
@@ -196,6 +216,7 @@ class Form extends Component
             'paidAmount' => ['required', 'string', $money(true)],
             'paymentAccountId' => ['nullable', 'integer'],
             'dueDate' => ['nullable', 'date_format:Y-m-d'],
+            'paidBy' => ['nullable', 'integer'],
         ] : [
             'debitAccountId' => ['required', 'integer'],
             'creditAccountId' => ['required', 'integer'],
@@ -207,7 +228,8 @@ class Form extends Component
             $paid = Money::toPaisa($this->paidAmount);
             $data += ['paid_amount' => $paid, 'category_account_id' => (int) $this->categoryAccountId,
                 'payment_account_id' => $paid > 0 && $this->paymentAccountId !== '' ? (int) $this->paymentAccountId : null,
-                'party_id' => $this->partyId !== '' ? (int) $this->partyId : null, 'due_date' => $this->dueDate !== '' ? $this->dueDate : null];
+                'party_id' => $this->partyId !== '' ? (int) $this->partyId : null, 'due_date' => $this->dueDate !== '' ? $this->dueDate : null,
+                'paid_by' => $this->paidBy !== '' ? (int) $this->paidBy : null];
         } else {
             $data += ['debit_account_id' => (int) $this->debitAccountId, 'credit_account_id' => (int) $this->creditAccountId];
         }
@@ -223,9 +245,10 @@ class Form extends Component
 
             return null;
         }
+        $this->syncReferenceFile($saved, $user);
         $message = __('Entry :number saved.', ['number' => $saved->number]);
         if ($addAnother && ! $entry) {
-            $this->reset('amount', 'paidAmount', 'partyId', 'dueDate', 'reference', 'description', 'debitAccountId', 'creditAccountId');
+            $this->reset('amount', 'paidAmount', 'partyId', 'dueDate', 'reference', 'referenceFile', 'description', 'debitAccountId', 'creditAccountId');
             $this->paidFollowsTotal = true;
             session()->now('success', $message);
             $this->js('document.getElementById('.json_encode($type->isBill() ? 'categoryAccountId' : 'creditAccountId').')?.focus()');
@@ -249,6 +272,7 @@ class Form extends Component
         $total = Money::isValidInput($this->amount) ? Money::toPaisa($this->amount) : 0;
         $paid = Money::isValidInput($this->paidAmount) ? Money::toPaisa($this->paidAmount) : $total;
         $company = $companyId ? Company::query()->find($companyId, ['id', 'name', 'is_active']) : null;
+        $currentFile = $this->entryId ? JournalEntry::query()->find($this->entryId)?->getMedia(JournalEntry::REFERENCE_FILE)->first() : null;
 
         return view('livewire.admin.entries.form', [
             'isBill' => $type->isBill(),
@@ -257,6 +281,12 @@ class Form extends Component
             'methods' => $methods,
             'parties' => $type->isBill() ? $this->partyOptions($companyId) : [],
             'showDue' => $type->isBill() && $paid < $total,
+            'showPayer' => $type->isBill() && $paid > 0,
+            'canChoosePayer' => auth()->user()->isRoot(),
+            'payers' => $type->isBill() ? $this->payerOptions($companyId) : [],
+            'payerName' => User::query()->whereKey((int) $this->paidBy)->value('name'),
+            'currentFile' => $currentFile,
+            'currentFileUrl' => $currentFile ? app(MediaService::class)->url($currentFile) : null,
             'settled' => $settled,
             'companyName' => $company?->name,
             'canAdd' => (bool) $company?->is_active,
@@ -286,6 +316,7 @@ class Form extends Component
             $this->paidFollowsTotal = $this->paidAmount === $this->amount;
             $this->partyId = (string) $entry->party_id;
             $this->dueDate = (string) $entry->due_date?->toDateString();
+            $this->paidBy = (string) ($entry->paid_by ?? auth()->id());
         } else {
             $this->debitAccountId = (string) $entry->debitAccount()?->id;
             $this->creditAccountId = (string) $entry->creditAccount()?->id;
@@ -348,6 +379,45 @@ class Form extends Component
         ])->all();
     }
 
+    /**
+     * Stores a newly chosen reference file and removes the one it replaces, or the current one when asked.
+     * The entry write is already authorized; the file is an attachment, not ledger data.
+     */
+    private function syncReferenceFile(JournalEntry $entry, User $user): void
+    {
+        if ($this->referenceFile === null && ! $this->removeReferenceFile) {
+            return;
+        }
+        $media = app(MediaService::class);
+        $previous = $entry->getMedia(JournalEntry::REFERENCE_FILE);
+        if ($this->referenceFile !== null) {
+            $media->attach($this->referenceFile, $user, JournalEntry::REFERENCE_FILE, $entry);
+        }
+        $previous->each(fn (Media $file) => $media->detach($file));
+        $this->reset('referenceFile', 'removeReferenceFile');
+    }
+
+    /**
+     * For the super admin: active users who can record entries in the company, plus the current payer.
+     *
+     * @return array<int|string, string>
+     */
+    private function payerOptions(?int $companyId): array
+    {
+        $viewer = auth()->user();
+        if ($companyId === null || ! $viewer->isRoot()) {
+            return [];
+        }
+        $users = User::query()->where(fn (Builder $query) => $query->where('is_active', true)->orWhereKey((int) $this->paidBy))
+            ->with('companies:id')->orderBy('name')->get()
+            ->filter(fn (User $user): bool => $user->id === (int) $this->paidBy || ($user->hasPermission('admin.access')
+                && ($user->hasPermission('companies.all') || $user->companies->contains('id', $companyId))));
+
+        return $users->mapWithKeys(fn (User $user): array => [
+            $user->id => $user->name.($user->is($viewer) ? ' ('.__('you').')' : '').($user->is_active ? '' : ' ('.__('inactive').')'),
+        ])->all();
+    }
+
     /** The company's first active Cash payment method, else its first active payment method. */
     private function defaultPaymentMethod(): string
     {
@@ -367,6 +437,7 @@ class Form extends Component
         return ['entryDate' => __('date'), 'amount' => $this->type === 'income' || $this->type === 'expense' ? __('total amount') : __('amount'),
             'categoryAccountId' => __('category'), 'partyId' => __('party'), 'paidAmount' => __('paid now'), 'paymentAccountId' => __('payment method'),
             'dueDate' => __('due date'), 'debitAccountId' => $transfer ? __('to') : __('payment method'), 'creditAccountId' => __('from'),
-            'reference' => __('reference'), 'description' => __('description')];
+            'reference' => __('reference'), 'referenceFile' => __('reference file'), 'paidBy' => $this->type === 'income' ? __('received by') : __('paid by'),
+            'description' => __('description')];
     }
 }

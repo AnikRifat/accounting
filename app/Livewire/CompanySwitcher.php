@@ -6,7 +6,6 @@ use App\Models\Company;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Livewire\Component;
-use Livewire\Livewire;
 
 /** Header control that sets the company scope for every page. */
 class CompanySwitcher extends Component
@@ -26,7 +25,7 @@ class CompanySwitcher extends Component
 
             return;
         }
-        $this->redirect(Livewire::originalUrl(), navigate: true);
+        $this->redirect(CompanyContext::returnUrl(), navigate: true);
     }
 
     public function render(): View

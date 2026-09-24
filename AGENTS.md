@@ -40,7 +40,14 @@ session timezone `+06:00`.
   settlements can't be voided.
 - **Inactive companies** accept no new entries, accounts or parties. They stay in reports.
 - **Roles and permissions** use `App\Support\Permissions` and `config/permissions.php`, not Spatie.
-  System roles: owner, administrator, accountant, data-entry, member (API only).
+  System roles: owner (the one super admin, labelled "Super admin"), administrator, accountant,
+  data-entry, member (API only). The super admin passes every check (`Gate::before`) and is created
+  only by `app:create-admin`, which refuses a second one. The other system roles are ordinary: their
+  permissions default to config and can be edited (stored in `role_permissions`).
+- **Employees are users.** There is no employees table. Staff fields live on `users`, every
+  employee signs in, and `User::syncParties()` keeps one party per assigned company (deactivated,
+  never deleted, when unassigned). Call it after saving a user and its companies. The super admin
+  has no parties. Salary is shown only to users with `users.update`.
 - **UI text** is English and every user-facing string goes through `__()` with the English text
   as key, so `lang/bn.json` can be added later without code changes.
 - Public API self-registration is off by default (`config/settings.php`). The starter's `/api/v1`

@@ -34,16 +34,30 @@ class PermissionsTest extends TestCase
         $this->assertFalse($user->hasPermission('unknown.ability'));
     }
 
-    public function test_root_is_immune_to_denials_and_system_role_database_overlays(): void
+    public function test_the_super_admin_skips_every_check_while_administrator_is_an_ordinary_role(): void
     {
         RolePermission::factory()->create(['role' => 'owner', 'permissions' => [], 'is_active' => false]);
         $root = User::factory()->create(['role' => 'owner', 'denied_permissions' => ['users.update']]);
         $this->assertTrue($root->hasPermission('users.update'));
-        $admin = User::factory()->create(['role' => 'administrator']);
-        RolePermission::factory()->create(['role' => 'administrator', 'permissions' => []]);
-        app(Permissions::class)->flush();
-        $this->assertTrue($admin->hasPermission('users.update'));
+        $this->assertTrue(Gate::forUser($root)->allows('an.ability.outside.the.catalogue'));
+        $root->forceFill(['is_active' => false])->save();
+        $this->assertFalse(Gate::forUser($root)->allows('users.update'));
+        $this->assertSame('Super admin', app(Permissions::class)->label('owner'));
         $this->assertNotContains('owner', app(Permissions::class)->assignableRoles());
+
+        $admin = User::factory()->create(['role' => 'administrator']);
+        $this->assertTrue($admin->hasPermission('users.update'));
+        $this->assertFalse(Gate::forUser($admin)->allows('an.ability.outside.the.catalogue'));
+        RolePermission::factory()->create(['role' => 'administrator', 'permissions' => ['admin.access', 'dashboard.view']]);
+        $this->assertFalse($admin->hasPermission('users.update'));
+        $this->assertTrue($admin->hasPermission('dashboard.view'));
+    }
+
+    public function test_only_one_super_admin_can_be_created(): void
+    {
+        User::factory()->create(['role' => 'owner']);
+        $this->artisan('app:create-admin')->expectsOutputToContain('A super admin already exists.')->assertFailed();
+        $this->assertSame(1, User::where('role', 'owner')->count());
     }
 
     public function test_custom_role_creation_rejects_system_names_and_wildcard_payloads(): void
@@ -55,14 +69,27 @@ class PermissionsTest extends TestCase
         $this->assertDatabaseHas('role_permissions', ['role' => 'reviewer', 'label' => 'Reviewer']);
     }
 
-    public function test_system_roles_are_immutable_but_can_be_disabled_without_revoking_existing_holders(): void
+    public function test_system_roles_keep_their_names_but_their_abilities_can_change_and_they_can_be_disabled(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Form::class, ['role' => 'data-entry'])->set('permissions', [])->call('save')->assertHasErrors('label');
+        $holder = User::factory()->create(['role' => 'data-entry']);
+        Livewire::test(Form::class, ['role' => 'data-entry'])->set('label', 'Clerk')->call('save')->assertHasErrors('label');
+        Livewire::test(Form::class, ['role' => 'data-entry'])->set('permissions', ['dashboard.view', 'admin.access'])->call('save')->assertHasNoErrors();
+        $this->assertSame(['admin.access', 'dashboard.view'], app(Permissions::class)->forRole('data-entry'));
+        $this->assertFalse($holder->hasPermission('entries.create'));
+
         Livewire::test(Form::class, ['role' => 'data-entry'])->set('isActive', false)->call('save')->assertHasNoErrors();
         $this->assertNotContains('data-entry', app(Permissions::class)->enabledRoles());
-        $existingHolder = User::factory()->create(['role' => 'data-entry']);
-        $this->assertTrue($existingHolder->hasPermission('dashboard.view'));
+        $this->assertTrue($holder->hasPermission('dashboard.view'));
+        $this->assertSame(['admin.access', 'dashboard.view'], app(Permissions::class)->forRole('data-entry'));
+
+        Livewire::test(Form::class, ['role' => 'accountant'])->set('isActive', false)->call('save')->assertHasNoErrors();
+        $this->assertContains('accounts.manage', app(Permissions::class)->forRole('accountant'));
+
+        $admin = User::factory()->create(['role' => 'administrator', 'denied_permissions' => ['permissions.manage']]);
+        $this->actingAs($admin);
+        Livewire::test(Form::class, ['role' => 'accountant'])->set('permissions', ['dashboard.view'])->call('save')->assertForbidden();
+        $this->assertContains('accounts.manage', app(Permissions::class)->forRole('accountant'));
     }
 
     public function test_custom_roles_cannot_be_deleted_while_assigned_and_system_roles_cannot_be_deleted(): void

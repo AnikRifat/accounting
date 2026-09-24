@@ -70,7 +70,6 @@ class Form extends Component
             }
             $row->fill(['is_active' => $this->isActive])->save();
         }
-        $registry->flush();
         session()->flash('success', __('Role saved.'));
 
         return redirect()->route('admin.roles.index');

@@ -2,11 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Livewire\Admin\Employees\Form as EmployeeForm;
 use App\Livewire\Admin\Parties\Form;
 use App\Livewire\Admin\Parties\Index;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\Party;
 use App\Models\User;
 use App\Support\CompanyContext;
@@ -148,7 +146,7 @@ class PartiesTest extends TestCase
     public function test_index_filters_by_type_status_and_search(): void
     {
         $company = Company::factory()->create();
-        Employee::factory()->for($company)->create(['name' => 'Rahim Employee']);
+        User::factory()->employeeOf($company)->create(['name' => 'Rahim Employee']);
         Party::factory()->for($company)->create(['name' => 'Active Customer', 'phone' => '01811222333']);
         Party::factory()->for($company)->create(['name' => 'Dormant Customer', 'is_active' => false]);
         $this->actingAs($this->userFor('accountant', $company));
@@ -159,30 +157,14 @@ class PartiesTest extends TestCase
             ->set('status', '')->set('search', '01811')->assertSee('Active Customer')->assertDontSee('Dormant Customer');
     }
 
-    public function test_employee_creation_and_updates_sync_to_its_party(): void
-    {
-        $company = Company::factory()->create();
-        $this->actingAs($this->userFor('accountant', $company));
-        Livewire::test(EmployeeForm::class)->set('employeeCode', 'E-01')->set('name', 'Rahim Uddin')->set('phone', '01700000000')
-            ->set('designation', 'Driver')->call('save')->assertHasNoErrors();
-        $employee = Employee::sole();
-        $party = $employee->party;
-        $this->assertSame([$company->id, 'Rahim Uddin', '01700000000', true], [$party->company_id, $party->name, $party->phone, $party->is_active]);
-
-        Livewire::test(EmployeeForm::class, ['employee' => $employee])->set('name', 'Rahim Mia')->set('phone', '')->set('isActive', false)
-            ->call('save')->assertHasNoErrors();
-        $party->refresh();
-        $this->assertSame(['Rahim Mia', null, false], [$party->name, $party->phone, $party->is_active]);
-        $this->assertDatabaseCount('parties', 1);
-    }
-
+    /** Employee parties are created and kept in sync by the employee's account; see EmployeesTest. */
     public function test_employee_parties_are_edited_through_the_employee_only(): void
     {
         $company = Company::factory()->create();
-        $party = Employee::factory()->for($company)->create(['name' => 'Staff Member'])->party;
+        $party = User::factory()->employeeOf($company)->create(['name' => 'Staff Member'])->parties()->sole();
         $this->actingAs($this->userFor('accountant', $company));
 
-        $this->get('/admin/parties')->assertOk()->assertSee(route('admin.employees.edit', $party->employee_id))->assertDontSee(route('admin.parties.edit', $party));
+        $this->get('/admin/parties')->assertOk()->assertSee(route('admin.users.edit', $party->user_id))->assertDontSee(route('admin.parties.edit', $party));
         $this->get('/admin/parties/'.$party->id.'/edit')->assertNotFound();
     }
 

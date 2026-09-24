@@ -31,6 +31,18 @@ class CompanyContextTest extends TestCase
         $this->assertSame([$second->id], $context->companyIds());
     }
 
+    public function test_return_url_keeps_the_page_filters_and_ignores_foreign_referers(): void
+    {
+        $page = url('/admin/entries').'?status=overdue&party=7';
+        request()->headers->set('referer', $page);
+        $this->assertSame($page, CompanyContext::returnUrl());
+
+        foreach (['https://evil.test/admin/entries', url('/logout'), 'not a url'] as $referer) {
+            request()->headers->set('referer', $referer);
+            $this->assertSame(url()->current(), CompanyContext::returnUrl());
+        }
+    }
+
     public function test_switching_to_an_invisible_company_is_refused(): void
     {
         [$mine, $other] = Company::factory()->count(2)->create();

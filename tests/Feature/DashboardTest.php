@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Enums\EntryType;
 use App\Livewire\Admin\Dashboard;
 use App\Models\Company;
-use App\Models\Employee;
 use App\Models\JournalEntry;
 use App\Models\Party;
 use App\Models\RolePermission;
@@ -57,9 +56,11 @@ class DashboardTest extends TestCase
         $this->bill($mine, EntryType::Income, '4900', 3_000_00, '2026-03-31');
         $this->void($this->bill($mine, EntryType::Income, '4000', 50_000_00, '2026-09-03'), 'Duplicate');
         $this->bill($other, EntryType::Income, '4000', 77_000_00, '2026-09-04', ['description' => 'Secret income']);
-        Employee::factory()->for($mine)->count(2)->create();
-        Employee::factory()->for($mine)->create(['is_active' => false]);
-        Employee::factory()->for($other)->count(5)->create();
+        // Active employees: the accountant and two staff in Mine (one inactive is left out), five in Other, one in both (nine in all).
+        User::factory()->employeeOf($mine)->count(2)->create();
+        User::factory()->employeeOf($mine)->create(['is_active' => false]);
+        User::factory()->employeeOf($other)->count(5)->create();
+        User::factory()->employeeOf($mine, $other)->create();
         $this->actingAs($this->user('accountant', $mine));
 
         Livewire::test(Dashboard::class)
@@ -67,18 +68,18 @@ class DashboardTest extends TestCase
                 && array_column($months, 'expense') === [1_000_00, 0, 0, 0, 0, 4_000_00] && $months[0]['label'] === 'April 2026')
             ->assertViewHas('cash', fn (array $cash): bool => $cash['total'] === 20_000_00 + 10_000_00 - 4_000_00 + 2_000_00 + 1_000_00 - 1_000_00 + 3_000_00
                 && count($cash['companies']) === 1 && collect($cash['companies'][0]['accounts'])->pluck('account.code')->all() === ['1000', '1010', '1020'])
-            ->assertViewHas('activeEmployees', 2)
+            ->assertViewHas('activeEmployees', 4)
             ->assertViewHas('recent', fn ($recent): bool => $recent->count() === 7 && $recent->every(fn (JournalEntry $entry): bool => $entry->company_id === $mine->id && ! $entry->isVoided()))
             ->assertSee('Mine Ltd')->assertDontSee('Other Ltd')->assertDontSee('Secret income');
         session([CompanyContext::SESSION_KEY => $other->id]);
-        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income');
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 4)->assertDontSee('Secret income');
 
         $this->actingAs($this->owner);
         session([CompanyContext::SESSION_KEY => null]);
-        Livewire::test(Dashboard::class)->assertViewHas('consolidated', true)->assertViewHas('activeEmployees', 7)->assertSee('Secret income')
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', true)->assertViewHas('activeEmployees', 9)->assertSee('Secret income')
             ->assertViewHas('cash', fn (array $cash): bool => count($cash['companies']) === 2)->assertSee('Other Ltd');
         session([CompanyContext::SESSION_KEY => $mine->id]);
-        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 2)->assertDontSee('Secret income')
+        Livewire::test(Dashboard::class)->assertViewHas('consolidated', false)->assertViewHas('activeEmployees', 4)->assertDontSee('Secret income')
             ->assertViewHas('cash', fn (array $cash): bool => count($cash['companies']) === 1)
             ->assertViewHas('months', fn (array $months): bool => $months[5]['income'] === 10_000_00);
         $this->assertThrows(fn () => Livewire::test(Dashboard::class)->set('company', (string) $other->id), PublicPropertyNotFoundException::class);

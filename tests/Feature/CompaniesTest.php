@@ -117,12 +117,12 @@ class CompaniesTest extends TestCase
     public function test_navigation_matches_each_role(): void
     {
         $company = Company::factory()->create();
-        $links = ['companies.index', 'employees.index', 'users.index', 'roles.index', 'settings'];
+        $links = ['companies.index', 'users.index', 'roles.index', 'settings'];
         $expected = [
             'owner' => $links,
             'administrator' => $links,
-            'accountant' => ['companies.index', 'employees.index'],
-            'data-entry' => ['companies.index', 'employees.index'],
+            'accountant' => ['companies.index', 'users.index'],
+            'data-entry' => ['companies.index'],
         ];
         foreach ($expected as $role => $visible) {
             $user = User::factory()->create(['role' => $role]);

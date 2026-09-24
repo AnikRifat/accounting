@@ -11,13 +11,17 @@ use App\Livewire\Admin\Entries\Settle;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
+use App\Models\Media;
 use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -442,5 +446,67 @@ class EntriesTest extends TestCase
         $crafted = $export();
         $this->assertStringContainsString('Alpha sale', $crafted);
         $this->assertStringNotContainsString('Hidden sale', $crafted);
+    }
+
+    public function test_the_payer_is_the_recorder_and_only_the_super_admin_can_choose_another(): void
+    {
+        [$company, $other] = Company::factory()->count(2)->create();
+        $clerk = $this->user('data-entry', $company);
+        $accountant = $this->user('accountant', $company);
+        $outsider = $this->user('accountant', $other);
+        $owner = User::factory()->create(['role' => 'owner']);
+        $this->context($company);
+        $expense = fn (): Testable => Livewire::test(Form::class, ['type' => 'expense'])
+            ->set('categoryAccountId', $this->accountId($company, '5100'))->set('amount', '500');
+
+        $this->actingAs($clerk);
+        $expense()->assertSet('paidBy', (string) $clerk->id)->assertSee(__('Recorded as you. Only the super admin can change it.'))
+            ->set('paidBy', (string) $accountant->id)->call('save')->assertHasNoErrors();
+        $entry = JournalEntry::sole();
+        $this->assertSame($clerk->id, $entry->paid_by);
+
+        $this->actingAs($accountant);
+        Livewire::test(Form::class, ['entry' => $entry])->assertSet('paidBy', (string) $clerk->id)->set('amount', '600')->call('save')->assertHasNoErrors();
+        $this->assertSame($clerk->id, $entry->refresh()->paid_by);
+
+        $this->actingAs($owner);
+        Livewire::test(Form::class, ['entry' => $entry])->assertSee($accountant->name)->assertDontSee($outsider->name)
+            ->set('paidBy', (string) $outsider->id)->call('save')->assertHasErrors('paidBy')
+            ->set('paidBy', (string) $accountant->id)->call('save')->assertHasNoErrors();
+        $this->assertSame($accountant->id, $entry->refresh()->paid_by);
+        $expense()->assertSet('paidBy', (string) $owner->id)->call('save')->assertHasNoErrors();
+        $this->assertSame($owner->id, JournalEntry::latest('id')->first()->paid_by);
+
+        $due = $this->dueBill($company, EntryType::Expense, 700, $clerk);
+        $this->assertNull($due->paid_by);
+    }
+
+    public function test_a_reference_file_is_optional_and_can_be_attached_replaced_and_removed(): void
+    {
+        Storage::fake('local');
+        $company = Company::factory()->create();
+        $this->context($company);
+        $this->actingAs($this->user('data-entry', $company));
+
+        Livewire::test(Form::class, ['type' => 'expense'])->set('categoryAccountId', $this->accountId($company, '5100'))->set('amount', '500')
+            ->set('referenceFile', UploadedFile::fake()->create('script.exe', 10, 'application/x-msdownload'))->call('save')->assertHasErrors('referenceFile')
+            ->set('referenceFile', UploadedFile::fake()->create('invoice.pdf', 100, 'application/pdf'))->call('save')->assertHasNoErrors();
+        $entry = JournalEntry::sole();
+        $invoice = $entry->getMedia(JournalEntry::REFERENCE_FILE)->sole();
+        $this->assertSame('invoice.pdf', $invoice->filename);
+        Storage::disk('local')->assertExists($invoice->path);
+
+        $this->actingAs($this->user('accountant', $company));
+        Livewire::test(Form::class, ['entry' => $entry])->assertSee('invoice.pdf')
+            ->set('referenceFile', UploadedFile::fake()->image('receipt.jpg'))->call('save')->assertHasNoErrors();
+        $receipt = $entry->getMedia(JournalEntry::REFERENCE_FILE)->sole();
+        $this->assertSame('receipt.jpg', $receipt->filename);
+        Storage::disk('local')->assertMissing($invoice->path);
+        $this->assertSoftDeleted($invoice);
+
+        Livewire::test(Form::class, ['entry' => $entry])->set('removeReferenceFile', true)->call('save')->assertHasNoErrors();
+        $this->assertCount(0, $entry->getMedia(JournalEntry::REFERENCE_FILE));
+        Storage::disk('local')->assertMissing($receipt->path);
+        $this->assertSame(0, Media::query()->count());
     }
 }

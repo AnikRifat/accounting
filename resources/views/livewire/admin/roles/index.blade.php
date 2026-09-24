@@ -1,10 +1,24 @@
-<div>
+<div class="page">
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Access control') }}</p><h1>{{ __('Roles & permissions') }}</h1><p class="muted">{{ __('System roles are fixed. Custom roles grant explicit abilities.') }}</p></div>@can('roles.create')@can('permissions.manage')<a class="btn" href="{{ route('admin.roles.create') }}" wire:navigate>{{ __('Create custom role') }}</a>@endcan
-@endcan</div>
-    @error('role')<p class="error mb-4" role="alert">{{ $message }}</p>@enderror
-    <div class="panel table-wrap"><table><thead><tr><th>{{ __('Role') }}</th><th>{{ __('Type') }}</th><th>{{ __('Abilities') }}</th><th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th></tr></thead><tbody>
-        @foreach($roles as $role)<tr wire:key="role-{{ $role }}"><td><strong>{{ $registry->label($role) }}</strong><p class="muted">{{ $role }}</p></td><td>{{ $registry->isCustom($role) ? __('Custom') : __('System') }}</td><td>{{ count($registry->forRole($role)) }} / {{ count($registry->catalogue()) }}</td><td><span class="badge {{ $registry->isActive($role) ? '' : 'badge-neutral' }}">{{ $registry->isActive($role) ? __('Enabled') : __('Disabled') }}</span></td><td><div class="flex items-center gap-4">@can('roles.update')<a class="text-link" href="{{ route('admin.roles.edit', $role) }}" aria-label="{{ __('Edit :name', ['name' => $registry->label($role)]) }}" wire:navigate>{{ __('Edit') }}</a>@endcan @if($registry->isCustom($role))@can('roles.delete')<button class="btn btn-danger" wire:click="delete('{{ $role }}')" wire:confirm="{{ __('Delete this custom role? Assigned roles cannot be deleted.') }}" wire:loading.attr="disabled">{{ __('Delete') }}</button>@endcan
-@endif</div></td></tr>@endforeach
-    </tbody></table></div>
+    <x-page-header :title="__('Roles & permissions')" :description="__('System roles are fixed. Custom roles grant explicit abilities.')">
+        @can('roles.create')@can('permissions.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.roles.create')">{{ __('Create custom role') }}</x-button></x-slot:actions> @endcan @endcan
+    </x-page-header>
+    @error('role')<x-alert tone="danger">{{ $message }}</x-alert>@enderror
+    <x-card flush>
+        <x-table :caption="__('Roles & permissions')">
+            <x-slot:head><th>{{ __('Role') }}</th><th>{{ __('Type') }}</th><th>{{ __('Abilities') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            @foreach($roles as $role)
+                <tr wire:key="role-{{ $role }}">
+                    <td><strong>{{ $registry->label($role) }}</strong><p class="muted">{{ $role }}</p></td>
+                    <td>@if($registry->isCustom($role))<x-badge tone="primary">{{ __('Custom') }}</x-badge>@else<x-badge tone="info">{{ __('System') }}</x-badge>@endif</td>
+                    <td class="nowrap">{{ count($registry->forRole($role)) }} / {{ count($registry->catalogue()) }}</td>
+                    <td><x-badge.active :active="$registry->isActive($role)" :on="__('Enabled')" :off="__('Disabled')" /></td>
+                    <td><div class="row-actions">
+                        @can('roles.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.roles.edit', $role)" :label="__('Edit :name', ['name' => $registry->label($role)])">{{ __('Edit') }}</x-button>@endcan
+                        @if($registry->isCustom($role))@can('roles.delete')<x-button variant="danger" size="sm" icon="trash" wire:click="delete('{{ $role }}')" wire:confirm="{{ __('Delete this custom role? Assigned roles cannot be deleted.') }}" :label="__('Delete :name', ['name' => $registry->label($role)])">{{ __('Delete') }}</x-button>@endcan @endif
+                    </div></td>
+                </tr>
+            @endforeach
+        </x-table>
+    </x-card>
 </div>

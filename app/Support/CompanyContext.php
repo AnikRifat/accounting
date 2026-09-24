@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Company;
 use Illuminate\Support\Collection;
+use Livewire\Livewire;
 
 /**
  * The company chosen in the header switcher: one visible company, or null for "All companies".
@@ -52,6 +53,19 @@ class CompanyContext
         $selected = $this->selectedId();
 
         return $selected ? [$selected] : $this->options()->pluck('id')->all();
+    }
+
+    /**
+     * The page to reload after the header company changes, keeping its filters. Livewire's original URL has no
+     * query string, so the same-site admin Referer of the update request is preferred.
+     */
+    public static function returnUrl(): string
+    {
+        $referer = request()->headers->get('referer');
+        $parts = is_string($referer) ? parse_url($referer) : false;
+
+        return is_array($parts) && ($parts['host'] ?? null) === request()->getHost() && str_starts_with($parts['path'] ?? '', '/admin')
+            ? $referer : Livewire::originalUrl();
     }
 
     /** Selects a visible company, or all companies with null. Returns false for a company the user can't see. */

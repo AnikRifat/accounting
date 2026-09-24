@@ -1,23 +1,30 @@
-<div>
+<div class="page">
     <x-notices />
-    <div class="page-header"><div><p class="eyebrow">{{ __('Accounting') }}</p><h1>{{ __('Categories') }}</h1><p class="muted">{{ $isAll ? __('What money is earned from or spent on, combined across companies. Each company keeps its own categories.') : __('What money is earned from or spent on.') }}</p></div>@can('accounts.manage')<a class="btn" href="{{ route('admin.categories.create') }}" wire:navigate>{{ $isAll ? __('Add category to all companies') : __('Add category') }}</a>@endcan</div>
+    <x-page-header :title="__('Categories')" :description="$isAll ? __('What money is earned from or spent on, combined across companies. Each company keeps its own categories.') : __('What money is earned from or spent on.')">
+        @can('accounts.manage')<x-slot:actions><x-button icon="plus" :href="route('admin.categories.create')">{{ $isAll ? __('Add category to all companies') : __('Add category') }}</x-button></x-slot:actions> @endcan
+    </x-page-header>
     @if(! $hasCompanies)
-        <div class="panel"><p class="muted">{{ __('You are not assigned to any company yet.') }}</p></div>
+        <x-card><x-empty-state emoji="🔒" :title="__('No company yet')" :description="__('You are not assigned to any company yet.')" /></x-card>
     @else
-        <div class="panel stack">
+        <div class="grid-2">
             @foreach($groups as $heading => $rows)
-                <div class="table-wrap" wire:key="group-{{ $loop->index }}"><table><caption class="sr-only">{{ $heading }}</caption><thead><tr><th>{{ $heading }}</th>@if($isAll)<th>{{ __('Companies') }}</th>@else<th>{{ __('Status') }}</th><th>{{ __('Actions') }}</th>@endif</tr></thead><tbody>
-                    @forelse($rows as $key => $categories)
-                        @if($isAll)
-                            <tr wire:key="category-{{ $loop->parent->index }}-{{ $loop->index }}"><td><strong>{{ $categories->first()->name }}</strong></td><td><ul class="stack gap-1">
-                                @foreach($categories as $category)<li wire:key="in-{{ $category->id }}">{{ $category->company->name }} <span class="badge {{ $category->is_active ? '' : 'badge-neutral' }}">{{ $category->is_active ? __('Active') : __('Inactive') }}</span> @can('accounts.manage')<button type="button" class="text-link" wire:click="editIn({{ $category->id }})" aria-label="{{ __('Edit :name in :company', ['name' => $category->name, 'company' => $category->company->name]) }}">{{ __('Edit') }}</button>@endcan</li>@endforeach
-                            </ul></td></tr>
-                        @else
-                            @php($category = $categories->first())
-                            <tr wire:key="category-{{ $category->id }}"><td><strong>{{ $category->name }}</strong><p class="muted">{{ $category->code }}</p></td><td><span class="badge {{ $category->is_active ? '' : 'badge-neutral' }}">{{ $category->is_active ? __('Active') : __('Inactive') }}</span></td><td>@can('accounts.manage')<a class="text-link" href="{{ route('admin.categories.edit', $category) }}" aria-label="{{ __('Edit :name', ['name' => $category->name]) }}" wire:navigate>{{ __('Edit') }}</a>@endcan</td></tr>
-                        @endif
-                    @empty<tr><td colspan="{{ $isAll ? 2 : 3 }}"><p class="muted">{{ __('No categories yet.') }}</p></td></tr>@endforelse
-                </tbody></table></div>
+                <x-card flush wire:key="group-{{ $loop->index }}">
+                    <x-table :caption="$heading">
+                        <x-slot:head><th>{{ $heading }}</th>@if($isAll)<th>{{ __('Companies') }}</th>@else<th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th>@endif</x-slot:head>
+                        @forelse($rows as $key => $categories)
+                            @if($isAll)
+                                <tr wire:key="category-{{ $loop->parent->index }}-{{ $loop->index }}"><td><strong>{{ $categories->first()->name }}</strong></td><td><ul class="stack-sm">
+                                    @foreach($categories as $category)<li wire:key="in-{{ $category->id }}" class="flex flex-wrap items-center gap-2">{{ $category->company->name }} <x-badge.active :active="$category->is_active" /> @can('accounts.manage')<x-button variant="ghost" size="sm" icon="pencil" wire:click="editIn({{ $category->id }})" :label="__('Edit :name in :company', ['name' => $category->name, 'company' => $category->company->name])" />@endcan</li>@endforeach
+                                </ul></td></tr>
+                            @else
+                                @php($category = $categories->first())
+                                <tr wire:key="category-{{ $category->id }}"><td><strong>{{ $category->name }}</strong><p class="muted">{{ $category->code }}</p></td><td><x-badge.active :active="$category->is_active" /></td><td><div class="row-actions">@can('accounts.manage')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.categories.edit', $category)" :label="__('Edit :name', ['name' => $category->name])">{{ __('Edit') }}</x-button>@endcan</div></td></tr>
+                            @endif
+                        @empty
+                            <x-table.empty :colspan="$isAll ? 2 : 3" emoji="🏷️">{{ __('No categories yet.') }}</x-table.empty>
+                        @endforelse
+                    </x-table>
+                </x-card>
             @endforeach
         </div>
     @endif

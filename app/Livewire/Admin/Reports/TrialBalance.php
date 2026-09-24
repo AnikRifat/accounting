@@ -46,7 +46,7 @@ class TrialBalance extends Component
             $accounts = Account::query()->whereIn('company_id', $context->companyIds())->with('company:id,code')->orderBy('code')->get();
             $balances = app(LedgerService::class)->balances($accounts, $asOf);
             $groups = $context->isAll()
-                ? $accounts->groupBy(fn (Account $account): string => $account->type->value.'|'.$account->name)
+                ? $accounts->groupBy(fn (Account $account): string => $account->type->value.'|'.mb_strtolower(trim($account->name)))
                 : $accounts->mapWithKeys(fn (Account $account): array => [$account->id => collect([$account])]);
             $rows = $groups->map(fn (Collection $group): array => $this->row($group, $balances))
                 ->filter(fn (array $row): bool => $row['debit'] !== 0 || $row['credit'] !== 0)
