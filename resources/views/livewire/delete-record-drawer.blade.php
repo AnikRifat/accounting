@@ -16,6 +16,9 @@
                         <div><x-button type="submit" variant="danger-solid" icon="trash" wire:loading.attr="disabled" wire:target="hardDelete">{{ __('Delete company permanently') }}</x-button></div>
                     </form>
                 @endif
+            @elseif($record instanceof \App\Models\User)
+                <p class="muted">{{ __('No transaction names this employee. Their login, company assignments and employee parties will be removed. This cannot be undone.') }}</p>
+                <div><x-button variant="danger-solid" icon="trash" wire:click="deleteUnused" wire:loading.attr="disabled" wire:target="deleteUnused">{{ __('Delete employee') }}</x-button></div>
             @elseif($usage['count'] === 0)
                 <p class="muted">{{ __('No transaction uses this record, so it can simply be deleted.') }}</p>
                 <div><x-button variant="danger-solid" icon="trash" wire:click="deleteUnused" wire:loading.attr="disabled" wire:target="deleteUnused">{{ __('Delete') }}</x-button></div>

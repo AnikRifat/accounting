@@ -14,7 +14,7 @@ return [
         'Accounting' => ['accounts.view', 'accounts.manage', 'accounts.delete', 'entries.view', 'entries.create', 'entries.update', 'entries.void', 'entries.delete', 'entries.purge'],
         'Reports' => ['reports.view'],
         'Parties' => ['parties.view', 'parties.create', 'parties.update', 'parties.delete'],
-        'Employees' => ['users.view', 'users.create', 'users.update'],
+        'Employees' => ['users.view', 'users.create', 'users.update', 'users.delete'],
         'Roles' => ['roles.view', 'roles.create', 'roles.update', 'roles.delete', 'roles.assign', 'permissions.manage'],
         'Settings' => ['settings.view', 'settings.update'],
         'Media' => ['media.view', 'media.upload', 'media.delete', 'media.manage'],

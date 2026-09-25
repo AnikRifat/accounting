@@ -271,6 +271,19 @@ Permissions (already in `config/permissions.php`):
 - Add a "Trash" link on the Transactions page.
 - Everything is gated with `@can` on the matching ability.
 
+## Increment 11: deleting employees (Anik, 2026-09-25)
+
+- New ability `users.delete` (Employees group). Administrator has it through `*`; other roles don't
+  by default.
+- The Employees list gets a Delete row button that opens `DeleteRecordDrawer` with `kind: 'user'`.
+  The employee is loaded through `ManageableUsers`, never the actor themself or the super admin.
+- An employee can be deleted only while no transaction (trashed included) names them as
+  `created_by`, `updated_by`, `voided_by` or `paid_by`, or through one of their employee parties.
+  Otherwise the drawer explains that the employee should be deactivated instead, so the audit trail
+  keeps their name. There is no transfer or hard delete for employees.
+- Deleting removes the user's employee parties, company assignments, sessions, API tokens and
+  attached files. `RecordDeletion::deleteUnused()` handles it.
+
 ## Increment 7 contract: header company switcher (Anik, 2026-09-24)
 
 Decisions:

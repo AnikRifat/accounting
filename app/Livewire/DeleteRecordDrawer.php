@@ -2,9 +2,11 @@
 
 namespace App\Livewire;
 
+use App\Livewire\Admin\Users\ManageableUsers;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\Party;
+use App\Models\User;
 use App\Services\RecordDeletion;
 use App\Support\CompanyContext;
 use Illuminate\Contracts\View\View;
@@ -15,14 +17,15 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Layout-level delete dialog for master data, opened by the `open-delete` window event with
- * `{kind, id}`. The record is always reloaded server-side within the user's companies.
+ * Layout-level delete dialog for master data and employees, opened by the `open-delete` window
+ * event with `{kind, id}`. The record is always reloaded server-side within the user's companies
+ * (an employee: among those the user manages, never the user themself).
  */
 class DeleteRecordDrawer extends Component
 {
     private const ABILITIES = [
         'category' => 'accounts.delete', 'payment-method' => 'accounts.delete', 'account' => 'accounts.delete',
-        'party' => 'parties.delete', 'company' => 'companies.delete',
+        'party' => 'parties.delete', 'company' => 'companies.delete', 'user' => 'users.delete',
     ];
 
     public bool $open = false;
@@ -49,12 +52,13 @@ class DeleteRecordDrawer extends Component
 
     public function deleteUnused(): void
     {
-        $this->run(fn (RecordDeletion $service, Account|Party|Company $record) => $service->deleteUnused($record, auth()->user()),
+        $this->run(fn (RecordDeletion $service, Account|Party|User $record) => $service->deleteUnused($record, auth()->user()),
             fn (string $name): string => __(':name deleted.', ['name' => $name]));
     }
 
     public function transfer(): void
     {
+        abort_if($this->kind === 'user', 404);
         $this->run(function (RecordDeletion $service, Account|Party|Company $record): void {
             $target = $service->transferTargets($record)->firstWhere('id', (int) $this->targetId);
             if (! $target) {
@@ -66,6 +70,7 @@ class DeleteRecordDrawer extends Component
 
     public function hardDelete(): void
     {
+        abort_if($this->kind === 'user', 404);
         $this->run(fn (RecordDeletion $service, Account|Party|Company $record) => $service->hardDelete($record, auth()->user(), $this->confirmCode),
             fn (string $name): string => __(':name and its transactions were deleted permanently.', ['name' => $name]));
     }
@@ -80,13 +85,13 @@ class DeleteRecordDrawer extends Component
             'name' => $record ? $this->label($record) : '',
             'usage' => $record ? $service->usage($record) : ['count' => 0, 'total' => 0],
             'blocked' => $record ? $service->blockedReason($record) : null,
-            'targets' => $record && ! $record instanceof Company
+            'targets' => $record instanceof Account || $record instanceof Party
                 ? $service->transferTargets($record)->mapWithKeys(fn (Account|Party $target): array => [$target->id => $this->label($target)])->all() : [],
         ]);
     }
 
     /**
-     * @param  callable(RecordDeletion, Account|Party|Company): void  $action
+     * @param  callable(RecordDeletion, Account|Party|Company|User): void  $action
      * @param  callable(string): string  $message  the success flash for the record's name
      */
     private function run(callable $action, callable $message): void
@@ -110,7 +115,7 @@ class DeleteRecordDrawer extends Component
     }
 
     /** The record of the given kind among the user's companies, or null. */
-    private function find(string $kind, int $id): Account|Party|Company|null
+    private function find(string $kind, int $id): Account|Party|Company|User|null
     {
         $companyIds = auth()->user()->accessibleCompanyIds();
         $accounts = fn (): Builder => Account::query()->whereIn('company_id', $companyIds);
@@ -121,11 +126,12 @@ class DeleteRecordDrawer extends Component
             'account' => $accounts()->find($id),
             'party' => Party::query()->whereIn('company_id', $companyIds)->find($id),
             'company' => Company::query()->whereKey($companyIds)->find($id),
+            'user' => ManageableUsers::for(auth()->user())->whereKeyNot(auth()->id())->find($id),
             default => null,
         };
     }
 
-    private function label(Account|Party|Company $record): string
+    private function label(Account|Party|Company|User $record): string
     {
         return match (true) {
             $record instanceof Account => $record->code.' · '.$record->name,

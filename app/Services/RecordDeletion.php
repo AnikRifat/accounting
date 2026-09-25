@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Livewire\Admin\Users\ManageableUsers;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
@@ -17,20 +18,23 @@ use Illuminate\Validation\ValidationException;
 use LogicException;
 
 /**
- * Deletes master data: categories, payment methods and other accounts, parties and whole companies.
+ * Deletes master data: categories, payment methods and other accounts, parties, whole companies and
+ * employees.
  *
  * A record used by transactions is either transferred (its transactions move to another record of
  * the same company and kind) or hard deleted (every related transaction is purged through
  * LedgerService::purge). Trashed transactions count as used, so nothing is left pointing at a
  * deleted record. System accounts, employee parties and a company's last active payment method
- * are never deleted here.
+ * are never deleted here. An employee is deleted only while no transaction names them (as author,
+ * editor, voider, payer or through their parties), so the audit trail stays whole; otherwise they
+ * are deactivated instead.
  */
 class RecordDeletion
 {
     public function __construct(private readonly LedgerService $ledger) {}
 
     /** @return array{count: int, total: int} transactions (trashed included) and their summed amount in paisa */
-    public function usage(Account|Party|Company $record): array
+    public function usage(Account|Party|Company|User $record): array
     {
         $entries = $this->relatedEntries($record);
 
@@ -38,12 +42,14 @@ class RecordDeletion
     }
 
     /** Why the record can never be deleted here, or null. */
-    public function blockedReason(Account|Party|Company $record): ?string
+    public function blockedReason(Account|Party|Company|User $record): ?string
     {
         return match (true) {
             $record instanceof Account && $record->is_system => __('System accounts are maintained by the application and cannot be deleted.'),
             $record instanceof Party && $record->isEmployee() => __('This party is an employee. Remove the employee from the company on the Users page instead.'),
             $record instanceof Account && $this->isLastActivePaymentMethod($record) => __('A company needs at least one active payment method. Add or activate another one first.'),
+            $record instanceof User && $record->isRoot() => __('The super admin cannot be deleted.'),
+            $record instanceof User && $this->relatedEntries($record)->exists() => __('This employee appears in transactions, as the one who entered, edited, voided or paid them, or as their party. Deactivate the employee instead, so the history keeps their name.'),
             default => null,
         };
     }
@@ -64,8 +70,13 @@ class RecordDeletion
     }
 
     /** Deletes a record that no transaction uses. */
-    public function deleteUnused(Account|Party $record, User $actor): void
+    public function deleteUnused(Account|Party|User $record, User $actor): void
     {
+        if ($record instanceof User) {
+            $this->deleteUser($record, $actor);
+
+            return;
+        }
         $this->authorize($actor, $this->ability($record), $record->company_id);
         $this->refuseBlocked($record);
         DB::transaction(function () use ($record): void {
@@ -144,13 +155,41 @@ class RecordDeletion
         }
     }
 
+    /**
+     * Deletes an employee the actor manages, with their login sessions, API tokens, files, company
+     * assignments and employee parties. Refused while any transaction names them.
+     */
+    private function deleteUser(User $user, User $actor): void
+    {
+        Gate::forUser($actor)->authorize('users.delete');
+        if ($user->is($actor) || ! ManageableUsers::for($actor)->whereKey($user->id)->exists()) {
+            throw new AuthorizationException(__('You cannot delete this employee.'));
+        }
+        DB::transaction(function () use ($user): void {
+            User::query()->whereKey($user->id)->lockForUpdate()->first();
+            if ($reason = $this->blockedReason($user)) {
+                throw ValidationException::withMessages(['record' => $reason]);
+            }
+            $user->parties()->delete();
+            $user->tokens()->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+            $user->delete();
+        });
+        foreach ($user->media()->get() as $media) {
+            app(MediaService::class)->detach($media);
+        }
+    }
+
     /** @return Builder<JournalEntry> every transaction, trashed included, that points at the record */
-    private function relatedEntries(Account|Party|Company $record): Builder
+    private function relatedEntries(Account|Party|Company|User $record): Builder
     {
         $query = JournalEntry::withTrashed();
 
         return match (true) {
             $record instanceof Company => $query->where('company_id', $record->id),
+            $record instanceof User => $query->where(fn (Builder $entries) => $entries->whereIn('party_id', $record->parties()->select('id'))
+                ->orWhere('created_by', $record->id)->orWhere('updated_by', $record->id)
+                ->orWhere('voided_by', $record->id)->orWhere('paid_by', $record->id)),
             $record instanceof Party => $query->where('company_id', $record->company_id)->where('party_id', $record->id),
             default => $query->where('company_id', $record->company_id)->whereHas('lines', fn (Builder $lines) => $lines->where('account_id', $record->id)),
         };

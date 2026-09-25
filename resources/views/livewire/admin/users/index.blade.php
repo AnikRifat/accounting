@@ -27,7 +27,7 @@
                     <td>{{ $user->hasPermission('companies.all') ? __('All companies') : ($user->companies->pluck('name')->join(', ') ?: '—') }}</td>
                     @if($showSalary)<td class="num"><x-money :value="$user->monthly_salary" /></td>@endif
                     <td><x-badge.active :active="$user->is_active" /></td>
-                    <td><div class="row-actions">@can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $user)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $user->id }}')" :label="__('Edit :name', ['name' => $user->name])">{{ __('Edit') }}</x-button>@endcan</div></td>
+                    <td><div class="row-actions">@can('users.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.users.edit', $user)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $user->id }}')" :label="__('Edit :name', ['name' => $user->name])">{{ __('Edit') }}</x-button>@endcan @can('users.delete')@unless($user->is(auth()->user()))<x-button variant="ghost" size="sm" icon="trash" class="text-danger" x-on:click="$dispatch('open-delete', { kind: 'user', id: {{ $user->id }} })" :label="__('Delete :name', ['name' => $user->name])" />@endunless @endcan</div></td>
                 </tr>
             @empty
                 <x-table.empty :colspan="$showSalary ? 8 : 7" emoji="👥">{{ __('No employees found.') }}</x-table.empty>
