@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Enums\CrmStatusType;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\LeadCall;
@@ -30,6 +31,32 @@ final class Crm
         ['call', 'Connected', 'success', false], ['call', 'Busy', 'warning', false],
         ['call', 'No response', 'neutral', false], ['call', 'Switched off', 'danger', false],
     ];
+
+    /** Lead sources every new company starts with; each company edits its own list. */
+    public const DEFAULT_SOURCES = ['Facebook', 'Website', 'Referral', 'Walk-in', 'Phone call'];
+
+    /** Adds the default lead sources to a company that has none yet. Uses the query builder so migrations can call it. */
+    public static function createDefaultSources(int $companyId): void
+    {
+        if (DB::table('crm_sources')->where('company_id', $companyId)->exists()) {
+            return;
+        }
+        $now = now();
+        DB::table('crm_sources')->insert(array_map(fn (string $name): array => ['company_id' => $companyId, 'name' => $name,
+            'is_active' => true, 'created_at' => $now, 'updated_at' => $now], self::DEFAULT_SOURCES));
+    }
+
+    /**
+     * Source names of the companies, for filters and reports.
+     *
+     * @param  list<int>  $companyIds
+     * @return array<string, string>
+     */
+    public static function sourceOptions(array $companyIds): array
+    {
+        return CrmSource::query()->whereIn('company_id', $companyIds)->orderBy('name')->pluck('name')
+            ->unique()->mapWithKeys(fn (string $name): array => [$name => $name])->all();
+    }
 
     /** Adds the default statuses to a company that has none yet. Uses the query builder so migrations can call it. */
     public static function createDefaults(int $companyId): void

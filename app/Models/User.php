@@ -76,8 +76,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Keeps one party per assigned company, with the user's name, phone and active status. Parties of
-     * companies no longer assigned are deactivated, never deleted, because entries may point at them.
+     * Keeps one party per assigned company, with the user's name, phone, active status and the built-in Employee
+     * category. Parties of companies no longer assigned are deactivated, never deleted, because entries may point at them.
      * The super admin is not an employee and has no parties. Call it after saving the user and its companies.
      */
     public function syncParties(): void
@@ -85,7 +85,8 @@ class User extends Authenticatable
         $companyIds = $this->isRoot() ? [] : $this->companies()->pluck('companies.id')->map(fn (mixed $id): int => (int) $id)->all();
         foreach ($companyIds as $companyId) {
             $this->parties()->firstOrNew(['company_id' => $companyId])
-                ->fill(['name' => $this->name, 'phone' => $this->phone, 'is_active' => $this->is_active])->save();
+                ->fill(['name' => $this->name, 'phone' => $this->phone, 'is_active' => $this->is_active,
+                    'party_category_id' => PartyCategory::employeeCategoryId($companyId)])->save();
         }
         $this->parties()->whereNotIn('company_id', $companyIds)->where('is_active', true)->update(['is_active' => false]);
     }

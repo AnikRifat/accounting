@@ -43,12 +43,16 @@ class CrmModuleTest extends TestCase
         $company = Company::factory()->create();
         $this->actingAs($this->userFor('owner'));
 
-        $this->get('/admin')->assertOk()->assertSee(route('admin.crm.dashboard'))->assertSee(route('admin.entries.index'))->assertDontSee(route('admin.crm.leads.index'));
+        $this->get('/admin')->assertOk()->assertSee(route('admin.crm.dashboard'))->assertSee(route('admin.entries.index'))
+            ->assertSee('aria-label="Organisation"', false)->assertDontSee(route('admin.crm.leads.index'))->assertDontSee(route('admin.roles.index'));
         $this->get('/admin/crm')->assertOk()->assertSee(route('admin.crm.leads.index'))->assertSee(route('admin.crm.calls.index'))->assertDontSee(route('admin.entries.index'));
+        // Companies, employees and administration form their own module.
+        $this->get('/admin/companies')->assertOk()->assertSee(route('admin.roles.index'))->assertSee(route('admin.users.index'))
+            ->assertDontSee(route('admin.crm.leads.index'))->assertDontSee(route('admin.entries.index'));
         // Shared pages keep the module the user was last in.
-        $this->get('/admin/companies')->assertOk()->assertSee(route('admin.crm.leads.index'))->assertDontSee(route('admin.entries.index'));
-        $this->get('/admin/entries')->assertOk();
-        $this->get('/admin/companies')->assertOk()->assertSee(route('admin.entries.index'))->assertDontSee(route('admin.crm.leads.index'));
+        $this->get('/admin/profile')->assertOk()->assertSee(route('admin.roles.index'));
+        $this->get('/admin/crm')->assertOk();
+        $this->get('/admin/profile')->assertOk()->assertSee(route('admin.crm.leads.index'))->assertDontSee(route('admin.roles.index'));
         $this->assertNotNull($company);
     }
 
@@ -57,7 +61,7 @@ class CrmModuleTest extends TestCase
         $company = Company::factory()->create();
         $sales = $this->userFor('sales', $company);
         $this->actingAs($sales)->get('/admin')->assertRedirect(route('admin.crm.dashboard'));
-        $this->get('/admin/crm')->assertOk()->assertDontSee('class="segmented module-switcher"', false);
+        $this->get('/admin/crm')->assertOk()->assertSee('aria-label="Organisation"', false)->assertDontSee('aria-label="Accounting"', false);
         $this->get('/admin/entries')->assertForbidden();
 
         $this->actingAs($this->userFor('accountant', $company))->get('/admin')->assertOk()->assertDontSee(route('admin.crm.dashboard'));

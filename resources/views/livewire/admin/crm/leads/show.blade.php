@@ -18,7 +18,7 @@
             <dl class="details-list">
                 @foreach([
                     __('Email') => $lead->email, __('Organisation') => $lead->organization, __('Address') => $lead->address,
-                    __('Source') => $lead->source, __('Notes') => $lead->notes,
+                    __('Source') => $lead->source?->name, __('Notes') => $lead->notes,
                     __('Created') => $lead->created_at->format('d M Y').($lead->creator ? ' · '.$lead->creator->name : ''),
                 ] as $label => $value)
                     <div><dt class="muted">{{ $label }}</dt><dd>{{ $value ?: '—' }}</dd></div>

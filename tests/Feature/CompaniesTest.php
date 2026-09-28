@@ -127,7 +127,9 @@ class CompaniesTest extends TestCase
         foreach ($expected as $role => $visible) {
             $user = User::factory()->create(['role' => $role]);
             $user->companies()->attach($company);
-            $response = $this->actingAs($user)->get('/admin')->assertOk();
+            $this->actingAs($user)->get('/admin')->assertOk()->assertSee('href="'.route('admin.companies.index').'"', false);
+            // Organisation and administration links live in the Organisation module's sidebar.
+            $response = $this->get('/admin/companies')->assertOk();
             foreach ($links as $link) {
                 $href = 'href="'.route('admin.'.$link).'"';
                 in_array($link, $visible, true) ? $response->assertSee($href, false) : $response->assertDontSee($href, false);

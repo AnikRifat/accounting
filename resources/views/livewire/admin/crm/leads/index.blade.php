@@ -14,10 +14,11 @@
                     <x-form.select name="followUp" :label="__('Follow-up')" wire:model.live="followUp" :options="['' => __('Any follow-up'), 'today' => __('Call today'), 'overdue' => __('Overdue'), 'upcoming' => __('Upcoming'), 'none' => __('No follow-up set')]" />
                     <x-form.select name="status" :label="__('Status')" wire:model.live="status" :options="['' => __('Any status')] + $statuses" />
                     <x-form.select name="service" :label="__('Service')" wire:model.live="service" :options="['' => __('Any service')] + $services" />
+                    <x-form.select name="source" :label="__('Source')" wire:model.live="source" :options="['' => __('Any source')] + $sources + ['none' => __('Not recorded')]" />
                     @if($seesAll)<x-form.select name="assignee" :label="__('Assigned to')" wire:model.live="assignee" :options="['' => __('Anyone'), 'none' => __('Unassigned')] + $people" />@endif
                     <x-form.date-range id="created-range" :label="__('Created')" />
                 </x-slot:filters>
-                <x-slot:clear><x-button variant="ghost" icon="filter-x" x-on:click="$wire.set('followUp', ''); $wire.set('status', ''); $wire.set('service', ''); $wire.set('assignee', ''); $wire.set('from', ''); $wire.set('to', '')">{{ __('Clear filters') }}</x-button></x-slot:clear>
+                <x-slot:clear><x-button variant="ghost" icon="filter-x" x-on:click="$wire.set('followUp', ''); $wire.set('status', ''); $wire.set('service', ''); $wire.set('source', ''); $wire.set('assignee', ''); $wire.set('from', ''); $wire.set('to', '')">{{ __('Clear filters') }}</x-button></x-slot:clear>
                 <x-slot:actions><x-table.export :columns="$this->tableColumns()" /></x-slot:actions>
             </x-toolbar>
         </x-slot:toolbar>
@@ -53,7 +54,7 @@
         @elseif($this->sheetAction() === 'edit')
             <livewire:admin.crm.leads.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'call')
-            <livewire:admin.crm.calls.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :return-to="route('admin.crm.leads.index', array_filter(['search' => $search, 'status' => $status, 'service' => $service, 'assignee' => $assignee, 'follow_up' => $followUp, 'from' => $from, 'to' => $to]))" :key="'sheet-'.$sheet" />
+            <livewire:admin.crm.calls.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :return-to="route('admin.crm.leads.index', array_filter(['search' => $search, 'status' => $status, 'service' => $service, 'source' => $source, 'assignee' => $assignee, 'follow_up' => $followUp, 'from' => $from, 'to' => $to]))" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'import')
             <livewire:admin.crm.leads.import :key="'sheet-'.$sheet" />
         @endif

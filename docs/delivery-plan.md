@@ -354,8 +354,13 @@ call log, services, statuses, user management and reports.
 
 Decisions (coordinator, reversible):
 - **Modules.** `App\Support\Modules` + `RememberModule` middleware. The sidebar shows the current
-  module's sections. Companies, Employees, Roles, Media and Settings are shared. The switcher shows only
-  the modules a user can open: Accounting needs `dashboard.view`, CRM needs `crm.view`.
+  module's sections. The switcher shows only the modules a user can open: Accounting needs
+  `dashboard.view`, CRM needs `crm.view`, and Organisation needs any of companies, employees, roles,
+  media or settings.
+- **Organisation module (Anik, 2026-09-29).** A third module holds Organisation (Companies,
+  Employees) and Administration (Roles & permissions, Media library, Settings). Parties stay in
+  Accounting, because transactions use them. Profile, the company chooser and print pages keep the
+  last module.
 - **Company rules are unchanged.** Header scope, `company.selected` on create routes, `#[Locked]` company
   ids re-checked on save, a Company column in All mode. Inactive companies accept no new leads or calls.
 - **Schema.** `crm_services` (unique name per company), `crm_statuses` (type `lead|call`, tone,
@@ -378,6 +383,20 @@ Decisions (coordinator, reversible):
   calls and visits.
 - **Import.** CSV/XLSX through OpenSpout (already a dependency), up to 5,000 rows. Only Phone is
   required. Duplicates and invalid phones are skipped and reported.
+
+Follow-ups (Anik, 2026-09-29):
+- **Party categories.** `party_categories` per company (`parties.party_category_id`, set to null when
+  a category is deleted). Managed on Accounting → Party categories with `parties.update`. Every company
+  has the built-in **Employee** category (`is_system`). `User::syncParties()` keeps it on employee
+  parties. It is for tracking only: never edited, deleted or picked for a custom party.
+- **CRM Reports section.** A Reports page with Lead pipeline (service × status), Lead sources
+  (contacted, open, each closed status), Call outcomes (person × call result, visits, leads
+  contacted) and Team performance, plus links to the Lead list and Call log. They share
+  `WithCrmReportFilters` (date range, person). All need `crm.reports.view`.
+- **Lead sources are a managed list.** `crm_sources` per company, with defaults Facebook, Website,
+  Referral, Walk-in and Phone call. A used source can only be deactivated. The migration moved the
+  typed `leads.source` text into the list (matching names, ignoring case) and dropped the column.
+  Import matches source names and falls back to the chosen default.
 
 Not included: a lead→party conversion into accounting, SMS/WhatsApp, a lead card view, bulk
 reassignment, and the global header search from the reference screens.
@@ -428,3 +447,120 @@ reassignment, and the global header search from the reference screens.
    per employee.
 8. `composer check` (pint + tests) and `npm run build` pass. A fresh clone can be set up with
    the documented commands.
+
+## Increment 13 plan: Sales module — invoicing, business documents, templates, reports (proposed 2026-09-29)
+
+Status: **approved 2026-09-29** (D1–D4 as recommended: mPDF, VAT posted to VAT Payable, cron creating drafts, section builder). Requested by Anik: invoicing (create,
+recurring, tax/VAT, discounts, partial/full payments, numbering, PDF, email/WhatsApp), business
+documents (quotation, estimate, purchase order, delivery note, receipt, credit/debit note, proforma,
+contract), document templates (branding, logo/colours, multiple templates, custom fields, builder)
+and reports.
+
+### Goal
+
+A company can quote, invoice and get paid for what it sells, with every issued invoice in the books,
+and send professional branded documents to customers and suppliers, without leaving Frish and
+without breaking the ledger, company-isolation or money invariants.
+
+### Architecture (coordinator recommendation)
+
+- **New header module "Sales"** (`admin.sales.*`, `App\Support\Modules::SALES`). Same company rules
+  as everything else: company from the header, `#[Locked]` company ids, save re-checks the context,
+  inactive companies accept no new documents.
+- **One `documents` table for every document type**, not a table per type. Columns: id, company_id,
+  type (enum `App\Enums\DocumentType`: Invoice, Quotation, Estimate, Proforma, PurchaseOrder,
+  DeliveryNote, CreditNote, DebitNote, Contract), number, party_id, template_id?, status (enum),
+  issue_date, due_date?, valid_until?, currency fixed BDT, subtotal, discount_total, tax_total, total
+  (all BIGINT paisa, recomputed server-side, never trusted from the form), discount (invoice-level,
+  amount or basis points), notes?, terms?, body? (contracts), custom_values JSON, source_document_id?
+  (conversions: quotation → invoice, PO → expense, invoice → delivery note), journal_entry_id?
+  (issued invoice / credit / debit note), recurring_invoice_id?, share_token?, created_by,
+  updated_by, voided_at/by/reason, timestamps.
+- **`document_lines`**: document_id, item_id?, description, quantity_milli (integer thousandths,
+  no floats), unit (≤20), unit_price (paisa), discount (paisa or basis points), tax_rate_bps,
+  line_subtotal, line_tax, line_total, income_account_id (category the line posts to), sort.
+  Rounding: each line's tax rounds half-up to paisa; document totals are sums of rounded lines.
+- **`items`** catalogue per company (name, unit, price, tax_rate_bps, income category, is_active).
+  Optional: a line can be free text.
+- **Numbering**: `App\Services\DocumentNumbers`, per company per type, prefix + year + sequence
+  (`INV-2026-0001`, `QUO-…`, `PO-…`), generated under the company row lock like journal numbers.
+  Prefix and padding editable per company. Drafts get their number on issue, so the sequence has
+  no gaps.
+- **Invoices post through `LedgerService` only**, as `EntryType::Income` bills, so dues, settle(),
+  the Dues report, party statement and dashboard keep working unchanged:
+  Cr each income category its net (after discounts); Cr **VAT Payable** (new system account 2100)
+  the tax; Dr payment methods paid now; Dr Accounts Receivable the rest. `LedgerService` gains one
+  method (`recordInvoice` / `updateInvoice`) that builds these lines; the "one-sided, balanced"
+  rule is unchanged. Draft, quotation, estimate, proforma, PO, delivery note and contract never post.
+- **"Post to accounts" switch (Anik, 2026-09-29), off by default** on invoices and credit/debit notes.
+  Off: the document never touches the ledger; payments are recorded on the document
+  (`document_payments`: date, amount, payment method account id, reference, created_by), and status
+  is derived from them. On: the document posts through `LedgerService` as below. Switching on later
+  posts the invoice and replays each recorded document payment through `settle()` with its own date
+  and method, in one transaction; switching a posted invoice back off is refused (void instead).
+  A credit note follows its invoice: it posts only when the invoice is posted.
+- **Payments on posted invoices** are `LedgerService::settle()` against the invoice's entry, multiple
+  methods allowed. Status Paid / Partly paid / Overdue is **derived** from outstanding, never stored.
+  A **Receipt** is a rendered view of a settlement (numbered by the settlement's entry number), not
+  a separate stored document.
+- **Credit note** (against a sales invoice): posts Dr income categories, Dr VAT Payable, Cr AR, and
+  reduces that invoice's outstanding. **Debit note** (against an expense bill): Dr AP, Cr expense
+  category. Outstanding becomes receivable/payable line − settlements − posted notes; the Dues report
+  and party statement pick it up through the same derived query. An invoice with posted notes or
+  settlements can't be voided (same rule as today).
+- **Templates**: `document_templates` per company (name, base layout, colours, font, logo media id,
+  section order + visibility JSON, header/footer text, bank details, signature media, VAT/BIN no.),
+  one default per document type. Custom field definitions (`document_fields`: company, doc type,
+  label, kind text/number/date, required, sort); values in `documents.custom_values`.
+- **Rendering**: one Blade view per base layout (Classic, Modern, Compact), used by the screen
+  preview, the print page and the PDF, so all three match.
+- **Sharing**: email via Laravel Mail sent synchronously (no queue on cPanel), PDF attached, logged
+  to `document_activities` (sent, viewed, emailed to, by whom). WhatsApp via a `wa.me/<phone>?text=`
+  link carrying a **public share link** (random 40-char token on the document, revocable,
+  optional expiry, view + PDF only, no login). No paid WhatsApp API. Parties gain an `email` column.
+- **Permissions** (`config/permissions.php`): `sales.view`, `invoices.create`, `invoices.update`,
+  `invoices.void`, `invoices.send`, `documents.create`, `documents.update`, `documents.delete`
+  (non-posting drafts only), `templates.manage`, `items.manage`, `sales.reports.view`. Accountant
+  gets all but `templates.manage`; data-entry gets view + create.
+
+### Decisions needed
+
+| # | Decision (all confirmed by Anik 2026-09-29 as recommended) | Recommendation | Why it matters |
+| --- | --- | --- | --- |
+| D1 | PDF engine (new dependency) | `mpdf/mpdf`: pure PHP, runs on cPanel, renders ৳ and Bengali party names | dompdf is lighter but has no Bengali shaping; browser print only means no PDF email attachment |
+| D2 | VAT in the books | Post VAT to a VAT Payable system account; rates per line, exclusive by default (15% BD standard as the default rate), inclusive toggle per document | VAT printed but not posted makes income overstated and gives no VAT report |
+| D3 | Recurring invoices trigger | Daily cPanel cron `php artisan schedule:run` + a "Generate due now" button; generated invoices land as **drafts** for review | Auto-issue + auto-email is possible later but posts to the books with nobody looking |
+| D4 | Builder scope | Section builder: drag to reorder and show/hide blocks (Livewire `wire:sort`, no new JS dependency), colours, logo, font, custom fields, 3 base layouts | A free-form canvas (drag any element anywhere) is several times larger and needs a JS editor library |
+
+### Increments (ordered; each ends with Pint, its tests and `npm run build` green)
+
+| # | Outcome | Depends on | Acceptance |
+| --- | --- | --- | --- |
+| 13.1 | Foundation: Sales module + nav, permissions, `parties.email`, items catalogue (CRUD), `DocumentNumbers`, VAT Payable 2100 in the default chart (and added to existing companies by migration) | — | Sales appears in the header for users with `sales.view`; item and number tests cover company isolation and concurrent numbering |
+| 13.2 | Invoices: draft → issue → edit → void; lines, line/invoice discounts, VAT; `LedgerService::recordInvoice`/`updateInvoice`; list with filters (status, party, dates), CSV | 13.1, D2 | Issued invoice posts one balanced entry; trial balance still balances; totals recomputed server-side; editing below the settled amount refused; cross-company ids refused on crafted Livewire requests |
+| 13.3 | Payments and receipts: receive payment (multi-method) from the invoice, derived status, receipt view/print | 13.2 | Partial then full payment moves status Due → Partly paid → Paid; voiding a receipt reopens it; Dues report matches invoice outstanding |
+| 13.4 | Templates and rendering: branding on company/template, 3 base layouts, preview, print, PDF download | 13.2, D1, D4 | Same document renders identically in preview, print and PDF; ৳ and Bengali names render; logo from media |
+| 13.5 | Sharing: email with PDF, WhatsApp link, public share link (revocable), activity log | 13.4 | Email logged with recipient; revoked/expired token returns 404; share page exposes no other document or company data |
+| 13.6 | Non-posting documents: quotation, estimate, proforma (convert → invoice), purchase order (convert → expense bill via the entry form), delivery note (from invoice), contract (rich text with `{party.name}` style placeholders) | 13.4 | Conversion copies lines and links `source_document_id`; converting twice is refused; none of these touch the ledger |
+| 13.7 | Credit and debit notes (ledger change) | 13.3 | Note reduces outstanding; note ≤ remaining outstanding; invoice with notes can't be voided; Dues/party statement include notes |
+| 13.8 | Recurring invoices: schedule (weekly/monthly/yearly, start, end, day), `sales:generate-recurring` command, schedule entry, "Generate due now" | 13.2, D3 | Command is idempotent (unique per schedule + period); running twice creates nothing new; missed days catch up |
+| 13.9 | Template builder: multiple templates per company, default per type, section reorder/show/hide, custom fields definitions and their inputs on the document form | 13.4, D4 | Reordering persists and shows in preview/PDF; required custom fields validated; a template of company A can't be used by B |
+| 13.10 | Reports: sales register, receivables ageing (0–30/31–60/61–90/90+), VAT report (output VAT by period and rate), sales by customer and by item, quotation conversion; Sales dashboard tiles | 13.3, 13.7 | Report totals reconcile with the ledger (VAT report = VAT Payable credits − note debits for the period); all-companies mode consolidates |
+| 13.11 | Demo data, MySQL check, README (cron + mail setup for cPanel and Dokploy), final review and behaviour verification | all | `composer check` and `npm run build` green; demo seeds invoices in every state |
+
+### Risks to watch
+
+- **Money/ledger (flagged)**: 13.2 and 13.7 change posting rules and the outstanding query. They get
+  their own review before merge, and a MySQL check of balances and dues.
+- **Public share links (flagged, data exposure)**: token-only access, no enumeration, revocable,
+  rate-limited route, no internal notes or other documents on the page.
+- **Email on cPanel**: synchronous send can be slow or fail; failures are shown and logged, never
+  silently dropped. Needs real SMTP credentials in `.env` (not committed).
+- **Uncommitted party-category work** in the tree is left alone; 13.1 adds `parties.email` in a new
+  migration rather than editing the parties migration.
+
+### Out of scope unless asked
+
+Multi-currency, supplier bills as their own document type (expense entries already cover them),
+input-VAT credit and Mushak forms, online card payment links, WhatsApp Business API, free-form
+canvas designer.

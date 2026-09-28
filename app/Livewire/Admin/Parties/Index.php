@@ -5,11 +5,13 @@ namespace App\Livewire\Admin\Parties;
 use App\Livewire\Concerns\WithFormSheet;
 use App\Livewire\Concerns\WithTableTools;
 use App\Models\Party;
+use App\Models\PartyCategory;
 use App\Support\CompanyContext;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -23,9 +25,13 @@ class Index extends Component
 
     public string $status = '';
 
+    /** Category name: names merge across companies in "All companies". */
+    #[Url(except: '')]
+    public string $category = '';
+
     public function updated(string $property): void
     {
-        if (in_array($property, ['search', 'kind', 'status'], true)) {
+        if (in_array($property, ['search', 'kind', 'status', 'category'], true)) {
             $this->resetPage();
         }
     }
@@ -37,6 +43,8 @@ class Index extends Component
         return view('livewire.admin.parties.index', [
             'showCompany' => app(CompanyContext::class)->isAll(),
             'parties' => $this->tableQuery()->paginate(15),
+            'categories' => PartyCategory::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->orderByDesc('is_system')->orderBy('name')
+                ->pluck('name')->unique()->mapWithKeys(fn (string $name): array => [$name => $name])->all(),
         ])->layout('layouts.admin');
     }
 
@@ -56,9 +64,11 @@ class Index extends Component
     {
         $search = mb_substr(trim($this->search), 0, 100);
 
-        return Party::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with('company')
+        return Party::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company', 'category'])
             ->when($this->kind === 'employee', fn ($query) => $query->whereNotNull('user_id'))
             ->when($this->kind === 'custom', fn ($query) => $query->whereNull('user_id'))
+            ->when($this->category === 'none', fn ($query) => $query->whereNull('party_category_id'))
+            ->when(! in_array($this->category, ['', 'none'], true), fn ($query) => $query->whereHas('category', fn ($q) => $q->where('name', $this->category)))
             ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))
             ->when($search !== '', fn ($query) => $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')->orWhere('phone', 'like', '%'.$search.'%')))
             ->orderBy('name');
@@ -69,6 +79,7 @@ class Index extends Component
         return new TableExport(__('Parties'), [
             'name' => ['label' => __('Name'), 'value' => fn (Party $party): string => $party->name],
             'company' => ['label' => __('Company'), 'value' => fn (Party $party): string => $party->company->name],
+            'category' => ['label' => __('Category'), 'value' => fn (Party $party): ?string => $party->category?->name],
             'type' => ['label' => __('Type'), 'value' => fn (Party $party): string => $party->isEmployee() ? __('Employee') : __('Custom')],
             'phone' => ['label' => __('Phone'), 'value' => fn (Party $party): ?string => $party->phone],
             'address' => ['label' => __('Address'), 'value' => fn (Party $party): ?string => $party->address],

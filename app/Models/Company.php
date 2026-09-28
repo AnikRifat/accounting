@@ -32,6 +32,8 @@ class Company extends Model
         static::created(function (Company $company): void {
             app(LedgerService::class)->createDefaultAccounts($company);
             Crm::createDefaults($company->id);
+            Crm::createDefaultSources($company->id);
+            PartyCategory::employeeCategoryId($company->id);
         });
     }
 

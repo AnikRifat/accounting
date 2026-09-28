@@ -8,10 +8,12 @@ use App\Enums\PaymentType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\Party;
+use App\Models\PartyCategory;
 use App\Models\User;
 use App\Services\CallLogger;
 use App\Services\LedgerService;
@@ -199,6 +201,7 @@ class DemoSeeder extends Seeder
     {
         $random = new Randomizer(new Mt19937(crc32('crm-'.$company->code)));
         $pick = fn (array $items): mixed => $items[$random->getInt(0, count($items) - 1)];
+        $sources = CrmSource::query()->where('company_id', $company->id)->pluck('id')->all();
         $services = array_map(fn (string $name): int => CrmService::create(['company_id' => $company->id, 'name' => $name])->id, self::CRM_SERVICES[$company->code]);
         $statuses = CrmStatus::query()->where('company_id', $company->id)->get();
         $leadStatuses = $statuses->where('type.value', 'lead')->values();
@@ -209,7 +212,7 @@ class DemoSeeder extends Seeder
             $lead = Lead::create(['company_id' => $company->id, 'name' => $random->getInt(0, 5) === 0 ? null : $pick(self::LEAD_NAMES),
                 'phone' => sprintf('01%d%08d', $random->getInt(3, 9), $number * 7919 + $random->getInt(0, 999)), 'crm_service_id' => $pick($services),
                 'crm_status_id' => $leadStatuses->first()->id, 'assigned_to' => $pick($people)->id, 'created_by' => $this->owner->id,
-                'source' => $pick(['Facebook', 'Referral', 'Website', 'Walk-in', null]), 'next_call_on' => $created->addDays($random->getInt(0, 3))->toDateString()]);
+                'crm_source_id' => $random->getInt(0, 4) === 0 ? null : $pick($sources), 'next_call_on' => $created->addDays($random->getInt(0, 3))->toDateString()]);
             $lead->forceFill(['created_at' => $created, 'updated_at' => $created])->save();
             $calledAt = $created;
             for ($calls = $random->getInt(0, 3); $calls > 0; $calls--) {
@@ -247,7 +250,9 @@ class DemoSeeder extends Seeder
         $wallets = $methods['mobile_banking']->pluck('id')->all();
         $this->funds[$company->id] = array_fill_keys([$cash, ...$banks, ...$wallets], 0);
 
-        $party = fn (array $row, string $notes): int => Party::create(['company_id' => $company->id, 'name' => $row[0], 'phone' => $row[1], 'notes' => $notes, 'is_active' => true])->id;
+        $categories = collect(['Customer', 'Supplier', 'Landlord'])->mapWithKeys(fn (string $name): array => [$name => PartyCategory::create(['company_id' => $company->id, 'name' => $name])->id]);
+        $party = fn (array $row, string $notes): int => Party::create(['company_id' => $company->id, 'party_category_id' => $categories[$notes],
+            'name' => $row[0], 'phone' => $row[1], 'notes' => $notes, 'is_active' => true])->id;
         $customers = array_map(fn (array $row): int => $party($row, 'Customer'), $definition['customers']);
         $suppliers = array_map(fn (array $row): int => $party($row, 'Supplier'), $definition['suppliers']);
         $landlord = $party($definition['landlord'], 'Landlord');

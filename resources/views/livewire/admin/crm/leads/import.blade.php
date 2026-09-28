@@ -23,7 +23,7 @@
                 <ul class="muted mt-2 stack-sm">
                     @foreach($columns as $field => $aliases)<li><strong>{{ $aliases[0] }}</strong>@if(count($aliases) > 1) · {{ implode(', ', array_slice($aliases, 1)) }}@endif</li>@endforeach
                 </ul>
-                <p class="muted mt-2">{{ __('Dates are read as 2026-10-01 or day first (01/10/2026). Unknown services and statuses use the defaults below.') }}</p>
+                <p class="muted mt-2">{{ __('Dates are read as 2026-10-01 or day first (01/10/2026). Unknown services, sources and statuses use the defaults below.') }}</p>
             </details>
             <p><a class="text-link" href="{{ route('admin.crm.leads.import-template') }}">{{ __('Download a template') }}</a></p>
         </x-card>
@@ -31,6 +31,7 @@
             <div class="form-grid">
                 <x-form.select name="statusId" :label="__('Status')" :options="$statuses" wire:model="statusId" required />
                 <x-form.select name="serviceId" :label="__('Service')" :options="$services" wire:model="serviceId" />
+                <x-form.select name="sourceId" :label="__('Source')" :options="$sources" wire:model="sourceId" />
                 @if($canAssign)<x-form.select name="assignTo" :label="__('Assign to')" :options="$assignees" wire:model="assignTo" />@endif
             </div>
         </x-card>

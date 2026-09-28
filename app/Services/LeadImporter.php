@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Support\Crm;
@@ -18,8 +19,8 @@ use Throwable;
 /**
  * Imports leads from the first sheet of a CSV or XLSX file into one company. The first row names the columns
  * (see COLUMNS for the accepted headers; only Phone is required). Rows whose phone is invalid are skipped and
- * reported; numbers already in the company, or repeated in the file, are skipped as duplicates. Service and
- * status cells match the company's active names, ignoring case, and fall back to the chosen defaults.
+ * reported; numbers already in the company, or repeated in the file, are skipped as duplicates. Service, source
+ * and status cells match the company's active names, ignoring case, and fall back to the chosen defaults.
  */
 class LeadImporter
 {
@@ -42,7 +43,7 @@ class LeadImporter
     /**
      * @return array{created: int, duplicates: int, invalid: list<int>} invalid holds the spreadsheet row numbers
      */
-    public function import(string $path, string $extension, Company $company, int $defaultStatusId, ?int $defaultServiceId, ?int $assignTo, int $actorId): array
+    public function import(string $path, string $extension, Company $company, int $defaultStatusId, ?int $defaultServiceId, ?int $defaultSourceId, ?int $assignTo, int $actorId): array
     {
         $rows = $this->rows($path, $extension);
         $header = array_shift($rows) ?? [];
@@ -56,6 +57,8 @@ class LeadImporter
 
         $known = Lead::query()->where('company_id', $company->id)->pluck('phone')->flip()->all();
         $services = CrmService::query()->where('company_id', $company->id)->where('is_active', true)->pluck('id', 'name')
+            ->mapWithKeys(fn (mixed $id, string $name): array => [mb_strtolower($name) => (int) $id])->all();
+        $sources = CrmSource::query()->where('company_id', $company->id)->where('is_active', true)->pluck('id', 'name')
             ->mapWithKeys(fn (mixed $id, string $name): array => [mb_strtolower($name) => (int) $id])->all();
         $statuses = CrmStatus::query()->where('company_id', $company->id)->lead()->where('is_active', true)->get(['id', 'name', 'is_closed'])
             ->keyBy(fn (CrmStatus $status): string => mb_strtolower($status->name));
@@ -88,7 +91,7 @@ class LeadImporter
                 'company_id' => $company->id, 'phone' => $phone,
                 'name' => mb_substr($cell('name'), 0, 150) ?: null, 'email' => filter_var($email, FILTER_VALIDATE_EMAIL) && mb_strlen($email) <= 150 ? $email : null,
                 'organization' => mb_substr($cell('organization'), 0, 150) ?: null, 'address' => mb_substr($cell('address'), 0, 255) ?: null,
-                'source' => mb_substr($cell('source'), 0, 100) ?: null, 'notes' => mb_substr($cell('notes'), 0, 1000) ?: null,
+                'crm_source_id' => $sources[mb_strtolower($cell('source'))] ?? $defaultSourceId, 'notes' => mb_substr($cell('notes'), 0, 1000) ?: null,
                 'crm_service_id' => $services[mb_strtolower($cell('service'))] ?? $defaultServiceId, 'crm_status_id' => $statusId,
                 'next_call_on' => $closed ? null : $this->date(isset($columns['next_call_on']) ? ($row[$columns['next_call_on']] ?? null) : null),
                 'assigned_to' => $assignTo, 'created_by' => $actorId, 'created_at' => $now, 'updated_at' => $now,

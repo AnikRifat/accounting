@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * A prospective customer of one company. `next_call_on` is the follow-up date; it is set by the lead form
  * and replaced by every logged call (see App\Services\CallLogger). Follow-up buckets are derived from it.
  */
-#[Fillable(['company_id', 'name', 'phone', 'email', 'organization', 'address', 'source', 'crm_service_id', 'crm_status_id',
+#[Fillable(['company_id', 'name', 'phone', 'email', 'organization', 'address', 'crm_source_id', 'crm_service_id', 'crm_status_id',
     'assigned_to', 'created_by', 'next_call_on', 'notes'])]
 class Lead extends Model
 {
@@ -42,6 +42,11 @@ class Lead extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(CrmService::class, 'crm_service_id');
+    }
+
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(CrmSource::class, 'crm_source_id');
     }
 
     public function status(): BelongsTo

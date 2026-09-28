@@ -1,28 +1,33 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="__('Parties')" :description="__('Customers, suppliers and everyone else who pays, receives or is spent on. Every employee is a party of each company they are assigned to.')">
-        @can('parties.create')<x-slot:actions><x-button icon="plus" :href="route('admin.parties.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Add party') }}</x-button></x-slot:actions> @endcan
+        <x-slot:actions>
+            <x-button variant="secondary" icon="columns" :href="route('admin.party-categories.index')">{{ __('Categories') }}</x-button>
+            @can('parties.create')<x-button icon="plus" :href="route('admin.parties.create')" :navigate="false" wire:click.prevent="openSheet('create')">{{ __('Add party') }}</x-button>@endcan
+        </x-slot:actions>
     </x-page-header>
     <x-card flush>
         <x-slot:toolbar>
-            <x-toolbar :active="($kind !== '') + ($status !== '')">
+            <x-toolbar :active="($kind !== '') + ($status !== '') + ($category !== '')">
                 <x-form.input name="search" :label="__('Search by name or phone')" wire:model.live.debounce.300ms="search" type="search" maxlength="100" :placeholder="__('Name or phone…')" />
                 <x-slot:filters>
+                    <x-form.select name="category" :label="__('Category')" wire:model.live="category" :options="['' => __('Any category')] + $categories + ['none' => __('No category')]" />
                     <x-form.select name="kind" :label="__('Type')" wire:model.live="kind" :options="['' => __('Any type'), 'custom' => __('Custom'), 'employee' => __('Employee')]" />
                     <x-form.select name="status" :label="__('Status')" wire:model.live="status" :options="['' => __('Any status'), 'active' => __('Active'), 'inactive' => __('Inactive')]" />
                 </x-slot:filters>
-                <x-slot:clear><x-button variant="ghost" icon="filter-x" x-on:click="$wire.set('kind', ''); $wire.set('status', '')">{{ __('Clear filters') }}</x-button></x-slot:clear>
+                <x-slot:clear><x-button variant="ghost" icon="filter-x" x-on:click="$wire.set('category', ''); $wire.set('kind', ''); $wire.set('status', '')">{{ __('Clear filters') }}</x-button></x-slot:clear>
                 <x-slot:actions><x-table.export :columns="$this->tableColumns()" /></x-slot:actions>
             </x-toolbar>
         </x-slot:toolbar>
         <x-table.bulk />
         <x-table :caption="__('Parties')">
-            <x-slot:head><x-table.check-all :ids="$parties->pluck('id')->all()" /><th>{{ __('Party') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Type') }}</th><th>{{ __('Phone') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            <x-slot:head><x-table.check-all :ids="$parties->pluck('id')->all()" /><th>{{ __('Party') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Category') }}</th><th>{{ __('Type') }}</th><th>{{ __('Phone') }}</th><th>{{ __('Status') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
             @forelse($parties as $party)
                 <tr wire:key="party-{{ $party->id }}">
                     <x-table.check :value="$party->id" :label="$party->name" />
                     <td><strong>{{ $party->name }}</strong>@if($party->address)<p class="muted">{{ $party->address }}</p>@endif</td>
                     @if($showCompany)<td>{{ $party->company->name }}</td>@endif
+                    <td>@if($party->category)<x-badge :tone="$party->category->is_system ? 'info' : 'primary'">{{ $party->category->name }}</x-badge>@else<span class="muted">—</span>@endif</td>
                     <td>@if($party->isEmployee())<x-badge tone="info">{{ __('Employee') }}</x-badge>@else<x-badge>{{ __('Custom') }}</x-badge>@endif</td>
                     <td class="nowrap">{{ $party->phone ?: '—' }}</td>
                     <td><x-badge.active :active="$party->is_active" /></td>
@@ -36,7 +41,7 @@
                     </div></td>
                 </tr>
             @empty
-                <x-table.empty :colspan="$showCompany ? 7 : 6" emoji="🤝">{{ __('No parties found.') }}</x-table.empty>
+                <x-table.empty :colspan="$showCompany ? 8 : 7" emoji="🤝">{{ __('No parties found.') }}</x-table.empty>
             @endforelse
         </x-table>
         {{ $parties->links() }}

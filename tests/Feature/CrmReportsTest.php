@@ -4,13 +4,17 @@ namespace Tests\Feature;
 
 use App\Livewire\Admin\Crm\Dashboard;
 use App\Livewire\Admin\Crm\Insights;
+use App\Livewire\Admin\Crm\Reports\Calls as CallReport;
 use App\Livewire\Admin\Crm\Reports\Performance;
+use App\Livewire\Admin\Crm\Reports\Pipeline;
+use App\Livewire\Admin\Crm\Reports\Sources;
 use App\Livewire\Admin\Crm\Services\Form as ServiceForm;
 use App\Livewire\Admin\Crm\Services\Index as ServiceIndex;
 use App\Livewire\Admin\Crm\Statuses\Form as StatusForm;
 use App\Livewire\Admin\Crm\Statuses\Index as StatusIndex;
 use App\Models\Company;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\LeadCall;
@@ -165,8 +169,9 @@ class CrmReportsTest extends TestCase
         $call = LeadCall::factory()->for($lead)->create(['call_status_id' => $this->statusId($first, 'Busy')]);
         $this->actingAs($this->userFor('owner'));
         $pages = ['/admin/crm', '/admin/crm/insights', '/admin/crm/leads', '/admin/crm/leads/'.$lead->id, '/admin/crm/leads/'.$lead->id.'/edit',
-            '/admin/crm/leads/'.$lead->id.'/calls/create', '/admin/crm/calls', '/admin/crm/calls/'.$call->id.'/edit', '/admin/crm/services',
-            '/admin/crm/statuses', '/admin/crm/statuses?type=call', '/admin/crm/reports/performance', '/admin/crm/leads?sheet=call:'.$lead->id];
+            '/admin/crm/leads/'.$lead->id.'/calls/create', '/admin/crm/calls', '/admin/crm/calls/'.$call->id.'/edit', '/admin/crm/services', '/admin/crm/sources',
+            '/admin/crm/statuses', '/admin/crm/statuses?type=call', '/admin/crm/reports', '/admin/crm/reports/pipeline', '/admin/crm/reports/sources',
+            '/admin/crm/reports/calls', '/admin/crm/reports/performance', '/admin/crm/leads?sheet=call:'.$lead->id];
 
         foreach ([null, $first->id, $second->id] as $context) {
             session([CompanyContext::SESSION_KEY => $context]);
@@ -177,5 +182,67 @@ class CrmReportsTest extends TestCase
         $this->get('/admin/crm/leads/create')->assertOk();
         $this->get('/admin/crm/leads?sheet=import')->assertOk()->assertSee(route('admin.crm.leads.import-template'));
         $this->get('/admin/crm/leads/import-template')->assertOk()->assertHeader('content-type', 'text/csv; charset=UTF-8');
+    }
+
+    public function test_the_pipeline_counts_leads_by_service_and_status(): void
+    {
+        $company = Company::factory()->create();
+        $web = CrmService::factory()->for($company)->create(['name' => 'Website']);
+        Lead::factory()->for($company)->count(2)->create(['crm_service_id' => $web->id]);
+        Lead::factory()->for($company)->create(['crm_service_id' => $web->id, 'crm_status_id' => $this->statusId($company, 'Closed won')]);
+        Lead::factory()->for($company)->create();
+        Lead::factory()->for($company)->create(['crm_service_id' => $web->id, 'created_at' => '2026-08-01 10:00:00']);
+        $this->actingAs($this->userFor('sales-manager', $company));
+
+        $rows = Livewire::test(Pipeline::class)->set('from', '2026-09-01')->viewData('rows')->keyBy('label');
+        $this->assertSame([2, 1, 3], [$rows['Website']['counts']['New'], $rows['Website']['counts']['Closed won'], $rows['Website']['total']]);
+        $this->assertSame(1, $rows['No service']['total']);
+    }
+
+    public function test_sources_show_contacted_open_and_closed_leads(): void
+    {
+        $company = Company::factory()->create();
+        $facebook = CrmSource::query()->where('company_id', $company->id)->where('name', 'Facebook')->value('id');
+        $called = Lead::factory()->for($company)->create(['crm_source_id' => $facebook]);
+        LeadCall::factory()->for($called)->count(2)->create();
+        Lead::factory()->for($company)->create(['crm_source_id' => $facebook, 'crm_status_id' => $this->statusId($company, 'Closed lost')]);
+        Lead::factory()->for($company)->create();
+        $this->actingAs($this->userFor('sales-manager', $company));
+
+        $component = Livewire::test(Sources::class);
+        $rows = $component->viewData('rows')->keyBy('label');
+        $this->assertSame([2, 1, 1, ['Closed lost' => 1]], [$rows['Facebook']['total'], $rows['Facebook']['contacted'], $rows['Facebook']['open'], $rows['Facebook']['closed']]);
+        $this->assertSame(1, $rows['Not recorded']['total']);
+        $this->assertSame(['Closed won', 'Closed lost'], $component->viewData('closedStatuses'));
+    }
+
+    public function test_call_outcomes_split_each_persons_calls_by_result(): void
+    {
+        $company = Company::factory()->create();
+        $rep = $this->userFor('sales', $company);
+        $rep->update(['name' => 'Santa']);
+        $lead = Lead::factory()->for($company)->create(['assigned_to' => $rep->id]);
+        LeadCall::factory()->for($lead)->for($rep)->count(2)->create(['call_status_id' => $this->statusId($company, 'Busy')]);
+        LeadCall::factory()->for($lead)->for($rep)->create();
+        LeadCall::factory()->for($lead)->for($rep)->create(['type' => 'visit']);
+        LeadCall::factory()->for(Lead::factory()->for($company))->create(['called_at' => '2026-08-01 10:00:00']);
+        $this->actingAs($this->userFor('sales-manager', $company));
+
+        $rows = Livewire::test(CallReport::class)->set('from', '2026-09-01')->viewData('rows');
+        $this->assertCount(1, $rows);
+        $this->assertSame(['Santa', 3, 1, 1], [$rows[0]['name'], $rows[0]['calls'], $rows[0]['visits'], $rows[0]['leads']]);
+        $this->assertEqualsCanonicalizing(['Busy' => 2, '' => 1], $rows[0]['counts']);
+    }
+
+    public function test_the_reports_section_needs_the_reports_permission(): void
+    {
+        $company = Company::factory()->create();
+        $this->actingAs($this->userFor('sales-manager', $company))->get('/admin/crm')->assertSee(route('admin.crm.reports.index'));
+        $this->get('/admin/crm/reports')->assertOk()->assertSee(route('admin.crm.reports.pipeline'))->assertSee(route('admin.crm.reports.performance'));
+
+        $this->actingAs($this->userFor('sales', $company))->get('/admin/crm')->assertDontSee(route('admin.crm.reports.index'));
+        foreach (['', '/pipeline', '/sources', '/calls', '/performance'] as $page) {
+            $this->get('/admin/crm/reports'.$page)->assertForbidden();
+        }
     }
 }

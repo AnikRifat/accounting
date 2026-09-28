@@ -8,6 +8,7 @@
         <x-card :title="__('Party details')">
             <div class="form-grid">
                 <x-form.input name="name" :label="__('Name')" wire:model="name" required maxlength="150" />
+                <x-form.select name="categoryId" :label="__('Category')" :options="$categories" wire:model="categoryId" :help="__('Manage the list under Party categories.')" />
                 <x-form.input name="phone" :label="__('Phone')" type="tel" wire:model="phone" maxlength="40" autocomplete="off" />
                 <x-form.input name="address" :label="__('Address')" wire:model="address" maxlength="255" autocomplete="off" />
                 <x-form.input name="notes" :label="__('Notes')" wire:model="notes" maxlength="500" autocomplete="off" />

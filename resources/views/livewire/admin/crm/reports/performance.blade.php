@@ -1,5 +1,5 @@
 <div class="page">
-    <x-page-header :title="__('Team performance')" :description="__('Leads assigned to each person by their current status, overdue follow-ups, and the calls and visits they logged. For lead and call lists use the filters and export on Leads and Call log.')" />
+    <x-page-header :title="__('Team performance')" :description="__('Leads assigned to each person by their current status, overdue follow-ups, and the calls and visits they logged. For lead and call lists use the filters and export on Leads and Call log.')" :back="route('admin.crm.reports.index')" :back-label="__('CRM reports')" />
     <x-card flush>
         <x-slot:toolbar>
             <x-toolbar>

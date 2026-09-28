@@ -38,7 +38,7 @@ class Show extends Component
 
     public function render(): View
     {
-        $lead = Lead::visibleTo(auth()->user())->with(['company:id,name', 'service:id,name', 'status', 'assignee:id,name', 'creator:id,name'])->findOrFail($this->leadId);
+        $lead = Lead::visibleTo(auth()->user())->with(['company:id,name', 'service:id,name', 'source:id,name', 'status', 'assignee:id,name', 'creator:id,name'])->findOrFail($this->leadId);
 
         return view('livewire.admin.crm.leads.show', [
             'lead' => $lead,

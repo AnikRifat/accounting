@@ -3,45 +3,50 @@
     $user = auth()->user();
     $modules = \App\Support\Modules::available($user);
     $module = \App\Support\Modules::current($user);
-    $organisation = [
-        'companies.index' => ['companies.view', __('Companies'), '🏢'],
-        'users.index' => ['users.view', __('Employees'), '👥'],
-    ];
-    $moduleSections = $module === \App\Support\Modules::CRM ? [
-        '' => [
-            'crm.dashboard' => ['crm.view', __('Dashboard'), '🎯'],
-            'crm.insights' => ['crm.view', __('Insights'), '📈'],
+    $navSections = collect(match ($module) {
+        \App\Support\Modules::CRM => [
+            '' => [
+                'crm.dashboard' => ['crm.view', __('Dashboard'), '🎯'],
+                'crm.insights' => ['crm.view', __('Insights'), '📈'],
+            ],
+            __('Sales') => [
+                'crm.leads.index' => ['crm.view', __('Leads'), '🧲'],
+                'crm.calls.index' => ['crm.view', __('Call log'), '📞'],
+            ],
+            __('Reports') => [
+                'crm.reports.index' => ['crm.reports.view', __('Reports'), '📊'],
+            ],
+            __('CRM setup') => [
+                'crm.services.index' => ['crm.view', __('Services'), '🧰'],
+                'crm.sources.index' => ['crm.view', __('Sources'), '📣'],
+                'crm.statuses.index' => ['crm.view', __('Statuses'), '🏷️'],
+            ],
         ],
-        __('Sales') => [
-            'crm.leads.index' => ['crm.view', __('Leads'), '🧲'],
-            'crm.calls.index' => ['crm.view', __('Call log'), '📞'],
-            'crm.reports.performance' => ['crm.reports.view', __('Team performance'), '🏆'],
+        \App\Support\Modules::ORGANISATION => [
+            __('Organisation') => [
+                'companies.index' => ['companies.view', __('Companies'), '🏢'],
+                'users.index' => ['users.view', __('Employees'), '👥'],
+            ],
+            __('Administration') => [
+                'roles.index' => ['roles.view', __('Roles & permissions'), '🔐'],
+                'media' => ['media.view', __('Media library'), '🖼️'],
+                'settings' => ['settings.view', __('Settings'), '⚙️'],
+            ],
         ],
-        __('CRM setup') => [
-            'crm.services.index' => ['crm.view', __('Services'), '🧰'],
-            'crm.statuses.index' => ['crm.view', __('Statuses'), '🏷️'],
+        default => [
+            '' => [
+                'dashboard' => ['dashboard.view', __('Dashboard'), '🏠'],
+            ],
+            __('Accounting') => [
+                'entries.index' => ['entries.view', __('Transactions'), '💸'],
+                'reports.index' => ['reports.view', __('Reports'), '📊'],
+                'parties.index' => ['parties.view', __('Parties'), '🤝'],
+                'party-categories.index' => ['parties.view', __('Party categories'), '🗂️'],
+                'categories.index' => ['accounts.view', __('Categories'), '🏷️'],
+                'payment-methods.index' => ['accounts.view', __('Payment methods'), '💳'],
+            ],
         ],
-        __('Organisation') => $organisation,
-    ] : [
-        '' => [
-            'dashboard' => ['dashboard.view', __('Dashboard'), '🏠'],
-        ],
-        __('Accounting') => [
-            'entries.index' => ['entries.view', __('Transactions'), '💸'],
-            'reports.index' => ['reports.view', __('Reports'), '📊'],
-            'categories.index' => ['accounts.view', __('Categories'), '🏷️'],
-            'payment-methods.index' => ['accounts.view', __('Payment methods'), '💳'],
-        ],
-        __('Organisation') => ['parties.index' => ['parties.view', __('Parties'), '🤝'], ...$organisation],
-    ];
-    $navSections = collect([
-        ...$moduleSections,
-        __('Administration') => [
-            'roles.index' => ['roles.view', __('Roles & permissions'), '🔐'],
-            'media' => ['media.view', __('Media library'), '🖼️'],
-            'settings' => ['settings.view', __('Settings'), '⚙️'],
-        ],
-    ])->map(fn (array $links) => array_filter($links, fn (array $link) => $user->can($link[0])))->filter();
+    })->map(fn (array $links) => array_filter($links, fn (array $link) => $user->can($link[0])))->filter();
     $homeRoute = $modules[$module][2] ?? 'admin.profile';
     $initials = collect(preg_split('/\s+/', trim($user->name)))->take(2)->map(fn (string $part) => mb_strtoupper(mb_substr($part, 0, 1)))->join('');
 @endphp
@@ -97,7 +102,7 @@
                             </div>
                         </div>
                     @endcanany
-                @elsecan('entries.create')
+                @elseif($module === \App\Support\Modules::ACCOUNTING && $user->can('entries.create'))
                     <div class="menu" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
                         <x-button icon="plus" x-on:click="open = ! open" aria-haspopup="menu" x-bind:aria-expanded="open"><span class="quick-add-label">{{ __('New') }}</span></x-button>
                         <div class="menu-panel" role="menu" x-show="open" x-cloak x-transition:enter="menu-enter" x-transition:enter-start="menu-hidden" x-transition:leave="menu-enter" x-transition:leave-end="menu-hidden">

@@ -31,6 +31,10 @@ class Index extends Component
     #[Url(except: '')]
     public string $service = '';
 
+    /** Source name. */
+    #[Url(except: '')]
+    public string $source = '';
+
     /** Lead status name. */
     #[Url(except: '')]
     public string $status = '';
@@ -50,7 +54,7 @@ class Index extends Component
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['search', 'service', 'status', 'assignee', 'followUp', 'from', 'to'], true)) {
+        if (in_array($property, ['search', 'service', 'source', 'status', 'assignee', 'followUp', 'from', 'to'], true)) {
             $this->resetPage();
         }
     }
@@ -76,9 +80,10 @@ class Index extends Component
             'seesAll' => Gate::allows('crm.leads.all'),
             'leads' => $this->tableQuery()->paginate(25),
             'services' => Crm::serviceOptions($companyIds),
+            'sources' => Crm::sourceOptions($companyIds),
             'statuses' => Crm::statusOptions($companyIds, CrmStatusType::Lead),
             'people' => Gate::allows('crm.leads.all') ? Crm::peopleOptions($companyIds) : [],
-            'active' => ($this->service !== '') + ($this->status !== '') + ($this->assignee !== '') + ($this->followUp !== '') + ($this->from !== '' || $this->to !== ''),
+            'active' => ($this->service !== '') + ($this->source !== '') + ($this->status !== '') + ($this->assignee !== '') + ($this->followUp !== '') + ($this->from !== '' || $this->to !== ''),
         ])->layout('layouts.admin');
     }
 
@@ -100,11 +105,13 @@ class Index extends Component
         $phone = Crm::normalizePhone($search);
 
         return Lead::visibleTo(auth()->user())->whereIn('leads.company_id', app(CompanyContext::class)->companyIds())
-            ->with(['company:id,name', 'service:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall'])
+            ->with(['company:id,name', 'service:id,name', 'source:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall'])
             ->when($search !== '', fn (Builder $query) => $query->where(fn (Builder $q) => $q->where('name', 'like', '%'.$search.'%')
                 ->orWhere('phone', 'like', '%'.($phone !== '' ? $phone : $search).'%')->orWhere('email', 'like', '%'.$search.'%')
                 ->orWhere('organization', 'like', '%'.$search.'%')))
             ->when($this->service !== '', fn (Builder $query) => $query->whereHas('service', fn (Builder $q) => $q->where('name', $this->service)))
+            ->when($this->source === 'none', fn (Builder $query) => $query->whereNull('crm_source_id'))
+            ->when(! in_array($this->source, ['', 'none'], true), fn (Builder $query) => $query->whereHas('source', fn (Builder $q) => $q->where('name', $this->source)))
             ->when($this->status !== '', fn (Builder $query) => $query->whereHas('status', fn (Builder $q) => $q->where('name', $this->status)))
             ->when($this->assignee === 'none', fn (Builder $query) => $query->whereNull('assigned_to'))
             ->when(ctype_digit($this->assignee), fn (Builder $query) => $query->where('assigned_to', (int) $this->assignee))
@@ -126,7 +133,7 @@ class Index extends Component
             'service' => ['label' => __('Service'), 'value' => fn (Lead $lead): ?string => $lead->service?->name],
             'status' => ['label' => __('Status'), 'value' => fn (Lead $lead): string => $lead->status->name],
             'assignee' => ['label' => __('Assigned to'), 'value' => fn (Lead $lead): ?string => $lead->assignee?->name],
-            'source' => ['label' => __('Source'), 'value' => fn (Lead $lead): ?string => $lead->source],
+            'source' => ['label' => __('Source'), 'value' => fn (Lead $lead): ?string => $lead->source?->name],
             'next_call' => ['label' => __('Next call'), 'value' => fn (Lead $lead): mixed => $lead->next_call_on, 'type' => 'date'],
             'last_call' => ['label' => __('Last call'), 'value' => fn (Lead $lead): ?string => $lead->latestCall?->summary],
             'created' => ['label' => __('Created'), 'value' => fn (Lead $lead): mixed => $lead->created_at, 'type' => 'date'],

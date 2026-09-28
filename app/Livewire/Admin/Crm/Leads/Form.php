@@ -4,6 +4,7 @@ namespace App\Livewire\Admin\Crm\Leads;
 
 use App\Models\Company;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\User;
@@ -45,7 +46,7 @@ class Form extends Component
 
     public string $address = '';
 
-    public string $source = '';
+    public string $sourceId = '';
 
     public string $serviceId = '';
 
@@ -66,10 +67,11 @@ class Form extends Component
         if ($this->leadId) {
             abort_unless(Lead::visibleTo($user)->whereKey($lead->id)->exists(), 404);
             $this->companyId = $lead->company_id;
-            foreach (['name', 'phone', 'email', 'organization', 'address', 'source', 'notes'] as $field) {
+            foreach (['name', 'phone', 'email', 'organization', 'address', 'notes'] as $field) {
                 $this->{$field} = (string) $lead->{$field};
             }
-            [$this->serviceId, $this->statusId, $this->assignedTo] = [(string) $lead->crm_service_id, (string) $lead->crm_status_id, (string) $lead->assigned_to];
+            [$this->serviceId, $this->sourceId, $this->statusId, $this->assignedTo]
+                = [(string) $lead->crm_service_id, (string) $lead->crm_source_id, (string) $lead->crm_status_id, (string) $lead->assigned_to];
             $this->nextCallOn = (string) $lead->next_call_on?->toDateString();
         } else {
             $this->companyId = app(CompanyContext::class)->company()?->id;
@@ -89,20 +91,20 @@ class Form extends Component
 
             return null;
         }
-        foreach (['name', 'email', 'organization', 'address', 'source', 'notes'] as $field) {
+        foreach (['name', 'email', 'organization', 'address', 'notes'] as $field) {
             $this->{$field} = trim($this->{$field});
         }
         $this->phone = Crm::normalizePhone($this->phone);
         $data = $this->validate($this->rules($company, $existing), [
             'phone.regex' => __('Enter a phone number of 6 to 15 digits, optionally starting with +.'),
             'phone.unique' => __('A lead with this phone number already exists in :company.', ['company' => $company->name]),
-        ], ['phone' => __('phone'), 'email' => __('email'), 'serviceId' => __('service'), 'statusId' => __('status'),
+        ], ['phone' => __('phone'), 'email' => __('email'), 'serviceId' => __('service'), 'sourceId' => __('source'), 'statusId' => __('status'),
             'assignedTo' => __('assigned to'), 'nextCallOn' => __('next call'), 'notes' => __('notes')]);
 
         $closed = (bool) CrmStatus::query()->whereKey($data['statusId'])->value('is_closed');
         $attributes = [
             'name' => $data['name'] ?: null, 'phone' => $data['phone'], 'email' => $data['email'] ?: null,
-            'organization' => $data['organization'] ?: null, 'address' => $data['address'] ?: null, 'source' => $data['source'] ?: null,
+            'organization' => $data['organization'] ?: null, 'address' => $data['address'] ?: null, 'crm_source_id' => $data['sourceId'] ?: null,
             'crm_service_id' => $data['serviceId'] ?: null, 'crm_status_id' => (int) $data['statusId'],
             'next_call_on' => $closed ? null : ($data['nextCallOn'] ?: null), 'notes' => $data['notes'] ?: null,
             // Without crm.leads.all a new lead is the creator's own and an existing one keeps its assignee.
@@ -124,6 +126,8 @@ class Form extends Component
             'canAssign' => Gate::allows('crm.leads.all'),
             'services' => ['' => __('No service')] + CrmService::query()->where('company_id', $companyId)
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $current?->crm_service_id))->orderBy('name')->pluck('name', 'id')->all(),
+            'sources' => ['' => __('Not recorded')] + CrmSource::query()->where('company_id', $companyId)
+                ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $current?->crm_source_id))->orderBy('name')->pluck('name', 'id')->all(),
             'statuses' => CrmStatus::query()->where('company_id', $companyId)->lead()
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $current?->crm_status_id))->orderBy('position')->pluck('name', 'id')->all(),
             'assignees' => ['' => __('Unassigned')] + $this->assignees($companyId, $current)->all(),
@@ -139,7 +143,8 @@ class Form extends Component
             'email' => ['nullable', 'email', 'max:150'],
             'organization' => ['nullable', 'string', 'max:150'],
             'address' => ['nullable', 'string', 'max:255'],
-            'source' => ['nullable', 'string', 'max:100'],
+            'sourceId' => ['nullable', Rule::in(CrmSource::query()->where('company_id', $company->id)
+                ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $existing?->crm_source_id))->pluck('id')->map(fn (mixed $id): string => (string) $id)->all())],
             'serviceId' => ['nullable', Rule::in(CrmService::query()->where('company_id', $company->id)
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $existing?->crm_service_id))->pluck('id')->map(fn (mixed $id): string => (string) $id)->all())],
             'statusId' => ['required', Rule::in(CrmStatus::query()->where('company_id', $company->id)->lead()

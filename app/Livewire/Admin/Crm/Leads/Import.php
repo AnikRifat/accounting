@@ -4,6 +4,7 @@ namespace App\Livewire\Admin\Crm\Leads;
 
 use App\Models\Company;
 use App\Models\CrmService;
+use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Services\LeadImporter;
 use App\Support\CompanyContext;
@@ -33,6 +34,8 @@ class Import extends Component
 
     public string $serviceId = '';
 
+    public string $sourceId = '';
+
     public string $assignTo = '';
 
     /** @var array{created: int, duplicates: int, invalid: list<int>}|null */
@@ -61,14 +64,16 @@ class Import extends Component
             'file' => ['required', 'file', 'max:5120', 'mimes:csv,txt,xlsx'],
             'statusId' => ['required', Rule::in($this->statuses($company)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
             'serviceId' => ['nullable', Rule::in($this->services($company)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
+            'sourceId' => ['nullable', Rule::in($this->sources($company)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
             'assignTo' => ['nullable', Rule::in(Crm::assignableUsers($company->id)->pluck('id')->map(fn (mixed $id): string => (string) $id)->all())],
-        ], [], ['file' => __('file'), 'statusId' => __('status'), 'serviceId' => __('service'), 'assignTo' => __('assigned to')]);
+        ], [], ['file' => __('file'), 'statusId' => __('status'), 'serviceId' => __('service'), 'sourceId' => __('source'), 'assignTo' => __('assigned to')]);
         // Without crm.leads.all imported leads are the importer's own, like leads they add by hand.
         $assignTo = $user->hasPermission('crm.leads.all') ? ($data['assignTo'] ?: null) : $user->id;
         $extension = strtolower($this->file->getClientOriginalExtension()) === 'xlsx' ? 'xlsx' : 'csv';
         try {
             $this->result = $importer->import($this->file->getRealPath(), $extension, $company, (int) $data['statusId'],
-                $data['serviceId'] ? (int) $data['serviceId'] : null, $assignTo, $user->id);
+                $data['serviceId'] ? (int) $data['serviceId'] : null,
+                $data['sourceId'] ? (int) $data['sourceId'] : null, $assignTo, $user->id);
         } catch (ValidationException $exception) {
             $this->addError('file', collect($exception->errors())->flatten()->first());
         }
@@ -83,6 +88,7 @@ class Import extends Component
             'companyName' => $company?->name,
             'statuses' => $company ? $this->statuses($company)->all() : [],
             'services' => ['' => __('No service')] + ($company ? $this->services($company)->all() : []),
+            'sources' => ['' => __('Not recorded')] + ($company ? $this->sources($company)->all() : []),
             'assignees' => ['' => __('Unassigned')] + ($company ? Crm::assignableUsers($company->id)->pluck('name', 'id')->all() : []),
             'canAssign' => Gate::allows('crm.leads.all'),
             'columns' => LeadImporter::COLUMNS,
@@ -93,6 +99,12 @@ class Import extends Component
     private function statuses(Company $company): Collection
     {
         return CrmStatus::query()->where('company_id', $company->id)->lead()->where('is_active', true)->orderBy('position')->pluck('name', 'id');
+    }
+
+    /** @return Collection<int, string> */
+    private function sources(Company $company): Collection
+    {
+        return CrmSource::query()->where('company_id', $company->id)->where('is_active', true)->orderBy('name')->pluck('name', 'id');
     }
 
     /** @return Collection<int, string> */
