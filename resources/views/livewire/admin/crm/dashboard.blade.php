@@ -28,9 +28,9 @@
                             <x-slot:head><th>{{ __('Lead') }}</th><th>{{ __('Status') }}</th><th>{{ __('Next call') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
                             @foreach($leads as $lead)
                                 <tr wire:key="{{ $queue }}-{{ $lead->id }}">
-                                    <td><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>
+                                    <td><div class="flex items-start gap-3"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" /><div><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>
                                         <p class="muted"><a class="text-link" href="tel:{{ $lead->phone }}">{{ $lead->phone }}</a>@if($lead->service) · {{ $lead->service->name }}@endif @if($showCompany) · {{ $lead->company->name }}@endif @if($lead->assignee) · {{ $lead->assignee->name }}@endif</p>
-                                        @if($lead->latestCall?->summary)<p class="muted">{{ \Illuminate\Support\Str::limit($lead->latestCall->summary, 80) }}</p>@endif</td>
+                                        @if($lead->latestCall?->summary)<p class="muted">{{ \Illuminate\Support\Str::limit($lead->latestCall->summary, 80) }}</p>@endif</div></div></td>
                                     <td><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge></td>
                                     <td class="nowrap">{{ $lead->next_call_on->format('d M Y') }}</td>
                                     <td><div class="row-actions">@can('crm.calls.create')<x-button variant="secondary" size="sm" icon="phone" :href="route('admin.crm.calls.create', $lead)" :navigate="false" wire:click.prevent="openSheet('call:{{ $lead->id }}')">{{ __('Log call') }}</x-button>@endcan</div></td>
@@ -52,7 +52,7 @@
                     <x-slot:head><th>{{ __('Lead') }}</th><th>{{ __('Phone') }}</th><th>{{ __('Status') }}</th><th>{{ __('Service') }}</th><th>{{ __('Assigned to') }}</th><th>{{ __('Next call') }}</th></x-slot:head>
                     @foreach($recent as $lead)
                         <tr wire:key="recent-{{ $lead->id }}">
-                            <td><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a><p class="muted">{{ $lead->created_at->format('d M Y') }}@if($showCompany) · {{ $lead->company->name }}@endif</p></td>
+                            <td><div class="flex items-start gap-3"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" /><div><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a><p class="muted">{{ $lead->created_at->format('d M Y') }}@if($showCompany) · {{ $lead->company->name }}@endif</p></div></div></td>
                             <td class="nowrap"><a class="text-link" href="tel:{{ $lead->phone }}">{{ $lead->phone }}</a></td>
                             <td><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge></td>
                             <td>{{ $lead->service?->name ?? '—' }}</td>

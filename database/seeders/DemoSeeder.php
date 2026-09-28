@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Enums\AccountType;
+use App\Enums\DocumentStatus;
+use App\Enums\DocumentType;
 use App\Enums\EntryType;
 use App\Enums\PaymentType;
 use App\Models\Account;
@@ -10,13 +12,18 @@ use App\Models\Company;
 use App\Models\CrmService;
 use App\Models\CrmSource;
 use App\Models\CrmStatus;
+use App\Models\Document;
+use App\Models\DocumentTemplate;
+use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\Party;
 use App\Models\PartyCategory;
 use App\Models\User;
 use App\Services\CallLogger;
+use App\Services\DocumentService;
 use App\Services\LedgerService;
+use App\Services\RecurringInvoices;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -137,7 +144,7 @@ class DemoSeeder extends Seeder
         $summary = DB::transaction(fn (): array => $this->seedDemo($password));
 
         $this->command?->info("Demo data created: {$summary['companies']} companies, {$summary['parties']} parties, {$summary['entries']} entries "
-            ."(2 voided), {$summary['open']} open bills ({$summary['overdue']} overdue).");
+            ."(2 voided), {$summary['open']} open bills ({$summary['overdue']} overdue), {$summary['documents']} sales documents (Jamuna Soft Ltd.).");
         $this->command?->line('Sign in at /admin/login with the demo password (local only):');
         $this->command?->line('  Owner       '.self::OWNER_EMAIL);
         $this->command?->line('  Accountant  '.self::ACCOUNTANT_EMAIL.' (Meghna Traders Ltd., Jamuna Soft Ltd.)');
@@ -147,7 +154,7 @@ class DemoSeeder extends Seeder
         $this->command?->line('  Password    '.$password);
     }
 
-    /** @return array{companies: int, parties: int, entries: int, open: int, overdue: int} */
+    /** @return array{companies: int, parties: int, entries: int, open: int, overdue: int, documents: int} */
     private function seedDemo(string $password): array
     {
         $this->password = $password;
@@ -165,6 +172,7 @@ class DemoSeeder extends Seeder
         $sales = $this->user('Santa Akter', self::SALES_EMAIL, 'sales', $password, [$companies['PAS']->id]);
         $this->crm($companies['PAS'], [$salesManager, $sales]);
         $this->crm($companies['JSL'], [$salesManager]);
+        $this->sales($companies['JSL'], 'Sales & Service Income', 'Cloud & Software Subscriptions');
 
         $ids = array_map(fn (Company $company): int => $company->id, $companies);
         $today = $this->today->toDateString();
@@ -172,7 +180,71 @@ class DemoSeeder extends Seeder
         return ['companies' => count($companies), 'parties' => Party::query()->whereIn('company_id', $ids)->count(),
             'entries' => JournalEntry::query()->whereIn('company_id', $ids)->count(),
             'open' => JournalEntry::query()->whereIn('company_id', $ids)->open()->count(),
-            'overdue' => JournalEntry::query()->whereIn('company_id', $ids)->open()->where('due_date', '<', $today)->count()];
+            'overdue' => JournalEntry::query()->whereIn('company_id', $ids)->open()->where('due_date', '<', $today)->count(),
+            'documents' => Document::query()->whereIn('company_id', $ids)->count()];
+    }
+
+    /**
+     * Sales module samples for one company: items, a default template, a converted quotation, invoices in every
+     * payment state (posted and not), a credit note, an open quotation, a posted supplier bill, a purchase order and
+     * a monthly recurring schedule. Everything goes through DocumentService, so the books stay balanced.
+     */
+    private function sales(Company $company, string $incomeCategory, string $expenseCategory): void
+    {
+        $documents = app(DocumentService::class);
+        $income = (int) $company->accounts()->where('name', $incomeCategory)->value('id');
+        $expense = (int) $company->accounts()->where('name', $expenseCategory)->value('id');
+        $cash = (int) $company->accounts()->where('code', '1000')->value('id');
+        $template = DocumentTemplate::create(['company_id' => $company->id, 'name' => 'Standard', 'layout' => 'modern', 'accent_color' => '#1d4ed8',
+            'font' => 'sans', 'sections' => DocumentTemplate::defaultSections(), 'vat_number' => '000123456-0101',
+            'bank_details' => "BRAC Bank, Banani branch\nA/C 1501-2040-567801", 'footer_text' => 'Thank you for your business.']);
+        $template->forceFill(['is_default' => true])->save();
+        $items = [
+            ['Website development', 'project', 2_50_000_00], ['Annual maintenance', 'year', 60_000_00], ['Cloud hosting', 'month', 5_000_00],
+        ];
+        foreach ($items as [$name, $unit, $price]) {
+            Item::create(['company_id' => $company->id, 'name' => $name, 'unit' => $unit, 'price' => $price, 'tax_rate' => 1500, 'account_id' => $income]);
+        }
+        $customers = Party::query()->where('company_id', $company->id)->whereNull('user_id')->orderBy('id')->limit(3)->get();
+        $supplier = Party::query()->where('company_id', $company->id)->where('name', 'Cloudline Hosting BD')->firstOrFail();
+        $date = fn (int $daysAgo): string => $this->today->subDays($daysAgo)->toDateString();
+        $line = fn (string $description, int $quantity, int $price, int $account, int $rate = 1500): array => ['description' => $description,
+            'quantity' => $quantity * 1000, 'unit_price' => $price, 'tax_rate' => $rate, 'account_id' => $account, 'discount_type' => null, 'discount_value' => 0];
+        $save = fn (DocumentType $type, Party $party, int $daysAgo, int $dueIn, array $lines, bool $post = false): Document => $documents->save(null, $company, $type, [
+            'party_id' => $party->id, 'issue_date' => $date($daysAgo), 'due_date' => $date($daysAgo - $dueIn), 'tax_inclusive' => false,
+            'discount_type' => null, 'discount_value' => 0, 'custom_values' => [], 'post_to_accounts' => $post, 'template_id' => $template->id,
+            'terms' => 'Payment within '.$dueIn.' days of the invoice date.', 'lines' => $lines], $this->owner);
+        $pay = fn (Document $document, int $amount, int $daysAgo) => $documents->recordPayment($document,
+            ['paid_on' => $date($daysAgo), 'amount' => $amount, 'account_id' => $cash, 'reference' => null], $this->owner);
+
+        $quote = $documents->issue($save(DocumentType::Quotation, $customers[0], 50, 15, [$line('Website development', 1, 2_50_000_00, $income),
+            $line('Annual maintenance', 1, 60_000_00, $income)]), $this->owner);
+        $documents->respond($quote, DocumentStatus::Accepted, $this->owner);
+        $fromQuote = $documents->convert($quote, DocumentType::Invoice, $this->owner);
+        $documents->save($fromQuote, $company, DocumentType::Invoice, ['party_id' => $fromQuote->party_id, 'issue_date' => $date(45),
+            'due_date' => $date(-15), 'tax_inclusive' => false, 'discount_type' => null, 'discount_value' => 0, 'custom_values' => [],
+            'post_to_accounts' => true, 'template_id' => $template->id, 'lines' => [$line('Website development', 1, 2_50_000_00, $income),
+                $line('Annual maintenance', 1, 60_000_00, $income)]], $this->owner);
+        $posted = $documents->issue($fromQuote, $this->owner);
+        $pay($posted, 1_50_000_00, 30);
+        $note = $documents->convert($posted, DocumentType::CreditNote, $this->owner);
+        $documents->save($note, $company, DocumentType::CreditNote, ['party_id' => $note->party_id, 'issue_date' => $date(20),
+            'tax_inclusive' => false, 'discount_type' => null, 'discount_value' => 0, 'custom_values' => [], 'post_to_accounts' => true,
+            'lines' => [$line('Goodwill discount on maintenance', 1, 10_000_00, $income)]], $this->owner);
+        $documents->issue($note, $this->owner);
+
+        $hosting = $documents->issue($save(DocumentType::Invoice, $customers[1], 35, 10, [$line('Cloud hosting', 3, 5_000_00, $income)], true), $this->owner);
+        $pay($hosting, $hosting->total, 28);
+        $overdue = $documents->issue($save(DocumentType::Invoice, $customers[2], 40, 14, [$line('Annual maintenance', 1, 60_000_00, $income)]), $this->owner);
+        $pay($overdue, 20_000_00, 20);
+        $documents->issue($save(DocumentType::Quotation, $customers[1], 5, 30, [$line('Mobile app development', 1, 3_50_000_00, $income)]), $this->owner);
+
+        $documents->issue($save(DocumentType::Bill, $supplier, 12, 20, [$line('Server rental', 2, 18_000_00, $expense, 0)], true), $this->owner);
+        $documents->issue($save(DocumentType::PurchaseOrder, $supplier, 3, 10, [$line('Backup storage upgrade', 1, 24_000_00, $expense, 0)]), $this->owner);
+
+        app(RecurringInvoices::class)->save(null, $company, ['source_id' => $hosting->id, 'name' => 'Monthly hosting — '.$customers[1]->name,
+            'frequency' => 'monthly', 'day' => 1, 'starts_on' => $this->today->startOfMonth()->addMonthNoOverflow()->toDateString(),
+            'ends_on' => null, 'is_active' => true], $this->owner);
     }
 
     /**

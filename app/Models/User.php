@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\HasMedia;
+use App\Concerns\HasPhoto;
 use App\Support\Permissions;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -27,7 +28,7 @@ class User extends Authenticatable
     protected $attributes = ['role' => 'member', 'is_active' => true, 'extra_roles' => '[]', 'denied_permissions' => '[]', 'monthly_salary' => 0];
 
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasMedia, Notifiable;
+    use HasApiTokens, HasFactory, HasMedia, HasPhoto, Notifiable;
 
     protected function casts(): array
     {

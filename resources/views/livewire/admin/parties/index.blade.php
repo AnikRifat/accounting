@@ -25,11 +25,11 @@
             @forelse($parties as $party)
                 <tr wire:key="party-{{ $party->id }}">
                     <x-table.check :value="$party->id" :label="$party->name" />
-                    <td><strong>{{ $party->name }}</strong>@if($party->address)<p class="muted">{{ $party->address }}</p>@endif</td>
+                    <td><div class="flex items-center gap-3"><x-avatar :url="$party->photoUrl()" :name="$party->name" /><div><strong>{{ $party->name }}</strong>@if($party->address)<p class="muted">{{ $party->address }}</p>@endif</div></div></td>
                     @if($showCompany)<td>{{ $party->company->name }}</td>@endif
                     <td>@if($party->category)<x-badge :tone="$party->category->is_system ? 'info' : 'primary'">{{ $party->category->name }}</x-badge>@else<span class="muted">—</span>@endif</td>
                     <td>@if($party->isEmployee())<x-badge tone="info">{{ __('Employee') }}</x-badge>@else<x-badge>{{ __('Custom') }}</x-badge>@endif</td>
-                    <td class="nowrap">{{ $party->phone ?: '—' }}</td>
+                    <td class="nowrap">{{ $party->phone ?: '—' }}@if($party->email)<p class="muted">{{ $party->email }}</p>@endif</td>
                     <td><x-badge.active :active="$party->is_active" /></td>
                     <td><div class="row-actions">
                         @if(! $showCompany)@can('reports.view')<x-button variant="ghost" size="sm" icon="eye" :href="route('admin.reports.party-statement', ['party' => $party->id])" :label="__('Statement of :name', ['name' => $party->name])" />@endcan @endif

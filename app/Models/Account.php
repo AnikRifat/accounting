@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AccountType;
 use App\Enums\PaymentType;
+use App\Enums\SystemAccount;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A per-company ledger account. `is_system` accounts are maintained by the application only.
+ * A per-company ledger account. `is_system` accounts are maintained by the application only; `system_key` says which one.
  * A payment method is an `is_cash` asset account (with a payment_type); a category is a non-system
  * income or expense account.
  */
@@ -27,7 +28,7 @@ class Account extends Model
 
     protected function casts(): array
     {
-        return ['type' => AccountType::class, 'payment_type' => PaymentType::class, 'is_cash' => 'boolean', 'is_system' => 'boolean', 'is_active' => 'boolean'];
+        return ['type' => AccountType::class, 'payment_type' => PaymentType::class, 'is_cash' => 'boolean', 'is_system' => 'boolean', 'system_key' => SystemAccount::class, 'is_active' => 'boolean'];
     }
 
     public function company(): BelongsTo

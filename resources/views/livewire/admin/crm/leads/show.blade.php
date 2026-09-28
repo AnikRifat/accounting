@@ -1,7 +1,7 @@
 <div class="page">
     <x-notices />
     <x-page-header :title="$lead->displayName()" :back="route('admin.crm.leads.index')" :back-label="__('Leads')">
-        <x-slot:meta><p class="btn-group"><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge>@if($lead->service)<x-badge>{{ $lead->service->name }}</x-badge>@endif<span class="muted">{{ $lead->company->name }}</span></p></x-slot:meta>
+        <x-slot:meta><p class="btn-group"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" size="lg" /><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge>@if($lead->service)<x-badge>{{ $lead->service->name }}</x-badge>@endif<span class="muted">{{ $lead->company->name }}</span></p></x-slot:meta>
         <x-slot:actions>
             @can('crm.leads.update')<x-button variant="secondary" icon="pencil" :href="route('admin.crm.leads.edit', $lead)" :navigate="false" wire:click.prevent="openSheet('edit')">{{ __('Edit') }}</x-button>@endcan
             @can('crm.calls.create')<x-button icon="phone" :href="route('admin.crm.calls.create', $lead)" :navigate="false" wire:click.prevent="openSheet('call')">{{ __('Log a call') }}</x-button>@endcan

@@ -8,6 +8,7 @@ use App\Enums\PaymentType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
+use App\Models\JournalLine;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
@@ -230,10 +231,16 @@ class Dashboard extends Component
     {
         $current = CarbonImmutable::today()->startOfMonth();
         $first = $current->subMonthsNoOverflow($this->trendMonths - 1);
-        $daily = JournalEntry::query()->posted()->whereIn('company_id', $companyIds)
-            ->whereIn('type', [EntryType::Income, EntryType::Expense])
-            ->whereBetween('entry_date', [$first->toDateString(), $current->endOfMonth()->toDateString()])
-            ->toBase()->groupBy('entry_date', 'type')->selectRaw('entry_date, type, SUM(amount) as total')->get();
+        // Income and expense account movement, so VAT on invoices is left out and credit and debit notes count.
+        $daily = JournalLine::query()->toBase()
+            ->join('journal_entries', 'journal_entries.id', '=', 'journal_lines.journal_entry_id')
+            ->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
+            ->whereIn('journal_entries.company_id', $companyIds)
+            ->whereNull('journal_entries.voided_at')->whereNull('journal_entries.deleted_at')
+            ->whereBetween('journal_entries.entry_date', [$first->toDateString(), $current->endOfMonth()->toDateString()])
+            ->whereIn('accounts.type', [AccountType::Income->value, AccountType::Expense->value])
+            ->groupBy('journal_entries.entry_date', 'accounts.type')
+            ->selectRaw('journal_entries.entry_date as entry_date, accounts.type as type, SUM(journal_lines.credit) - SUM(journal_lines.debit) as net')->get();
 
         $months = [];
         for ($month = $first; $month <= $current; $month = $month->addMonthNoOverflow()) {
@@ -242,7 +249,7 @@ class Dashboard extends Component
         foreach ($daily as $row) {
             $key = substr((string) $row->entry_date, 0, 7);
             if (isset($months[$key])) {
-                $months[$key][$row->type] += (int) $row->total;
+                $months[$key][$row->type] += $row->type === AccountType::Income->value ? (int) $row->net : -(int) $row->net;
             }
         }
 

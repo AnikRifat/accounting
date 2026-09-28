@@ -52,7 +52,7 @@ class Index extends Component
         $context = app(CompanyContext::class);
         $search = mb_substr(trim($this->search), 0, 100);
 
-        return ManageableUsers::for($actor)->with(['companies' => fn ($query) => $query->visibleTo($actor)->orderBy('name')])
+        return ManageableUsers::for($actor)->with(['photo', 'companies' => fn ($query) => $query->visibleTo($actor)->orderBy('name')])
             ->when(! $context->isAll(), fn ($query) => $query->where(fn ($q) => $q->whereHas('companies', fn ($companies) => $companies->whereKey($context->selectedId()))
                 ->orWhereDoesntHave('companies')))
             ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))

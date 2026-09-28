@@ -26,6 +26,7 @@
                     <div class="span-full">
                         <x-form.input name="phone" :label="__('Phone number')" type="tel" wire:model="phone" maxlength="40" autocomplete="tel" />
                     </div>
+                    <x-form.photo :current="$currentPhoto" :name="$name" :pending="(bool) $photo" />
                 </div>
                 <x-slot:footer>
                     <x-button type="submit" wire:loading.attr="disabled" wire:target="updateProfile">{{ __('Save profile') }}</x-button>

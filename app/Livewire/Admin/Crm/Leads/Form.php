@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Crm\Leads;
 
+use App\Livewire\Concerns\WithPhotoUpload;
 use App\Models\Company;
 use App\Models\CrmService;
 use App\Models\CrmSource;
@@ -25,6 +26,8 @@ use Livewire\Features\SupportRedirects\Redirector;
  */
 class Form extends Component
 {
+    use WithPhotoUpload;
+
     #[Locked]
     public ?int $leadId = null;
 
@@ -99,7 +102,7 @@ class Form extends Component
             'phone.regex' => __('Enter a phone number of 6 to 15 digits, optionally starting with +.'),
             'phone.unique' => __('A lead with this phone number already exists in :company.', ['company' => $company->name]),
         ], ['phone' => __('phone'), 'email' => __('email'), 'serviceId' => __('service'), 'sourceId' => __('source'), 'statusId' => __('status'),
-            'assignedTo' => __('assigned to'), 'nextCallOn' => __('next call'), 'notes' => __('notes')]);
+            'assignedTo' => __('assigned to'), 'nextCallOn' => __('next call'), 'notes' => __('notes'), 'photo' => __('photo')]);
 
         $closed = (bool) CrmStatus::query()->whereKey($data['statusId'])->value('is_closed');
         $attributes = [
@@ -110,7 +113,8 @@ class Form extends Component
             // Without crm.leads.all a new lead is the creator's own and an existing one keeps its assignee.
             'assigned_to' => $user->hasPermission('crm.leads.all') ? ($data['assignedTo'] ?: null) : ($existing ? $existing->assigned_to : $user->id),
         ];
-        $existing ? $existing->update($attributes) : Lead::create(['company_id' => $company->id, 'created_by' => $user->id, ...$attributes]);
+        $lead = $existing ? tap($existing)->update($attributes) : Lead::create(['company_id' => $company->id, 'created_by' => $user->id, ...$attributes]);
+        $this->syncPhoto($lead, $user);
         session()->flash('success', __('Lead saved.'));
 
         return redirect()->to($this->returnTo);
@@ -123,6 +127,7 @@ class Form extends Component
 
         return view('livewire.admin.crm.leads.form', [
             'companyName' => Company::visibleTo(auth()->user())->whereKey($companyId)->value('name'),
+            'currentPhoto' => $current?->photoUrl(),
             'canAssign' => Gate::allows('crm.leads.all'),
             'services' => ['' => __('No service')] + CrmService::query()->where('company_id', $companyId)
                 ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $current?->crm_service_id))->orderBy('name')->pluck('name', 'id')->all(),
@@ -152,6 +157,7 @@ class Form extends Component
             'assignedTo' => ['nullable', Rule::in($this->assignees($company->id, $existing)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
             'nextCallOn' => ['nullable', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            ...$this->photoRules(),
         ];
     }
 

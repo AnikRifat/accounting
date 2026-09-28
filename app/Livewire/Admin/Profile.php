@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin;
 
+use App\Livewire\Concerns\WithPhotoUpload;
 use App\Models\User;
 use App\Support\Permissions;
 use Illuminate\Contracts\View\View;
@@ -13,6 +14,8 @@ use Livewire\Component;
 
 class Profile extends Component
 {
+    use WithPhotoUpload;
+
     public string $name = '';
 
     public string $email = '';
@@ -50,7 +53,9 @@ class Profile extends Component
             'name' => ['required', 'string', 'max:150'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:40'],
+            ...$this->photoRules(),
         ], [], [
+            'photo' => __('photo'),
             'name' => __('full name'),
             'email' => __('email address'),
             'phone' => __('phone number'),
@@ -67,6 +72,7 @@ class Profile extends Component
             $user->save();
             $user->syncParties();
         });
+        $this->syncPhoto($user, $user);
 
         session()->flash('success', __('Profile updated successfully.'));
     }
@@ -102,6 +108,7 @@ class Profile extends Component
         $permissions = app(Permissions::class);
 
         return view('livewire.admin.profile', [
+            'currentPhoto' => auth()->user()->photoUrl(),
             'user' => $user,
             'permissions' => $permissions,
         ])->layout('layouts.admin');

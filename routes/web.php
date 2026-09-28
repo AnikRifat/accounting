@@ -1,9 +1,15 @@
 <?php
 
+use App\Enums\DocumentType;
 use App\Http\Controllers\Admin\EntryExportController;
 use App\Http\Controllers\Admin\LeadImportTemplateController;
 use App\Http\Controllers\Admin\PrintTableController;
+use App\Http\Controllers\Admin\Sales\DocumentPdfController;
+use App\Http\Controllers\Admin\Sales\DocumentPrintController;
+use App\Http\Controllers\Admin\Sales\ReceiptController;
+use App\Http\Controllers\Admin\Sales\TemplatePreviewController;
 use App\Http\Controllers\Api\V1\MediaController;
+use App\Http\Controllers\SharedDocumentController;
 use App\Livewire\Admin\Accounts\Form as AccountForm;
 use App\Livewire\Admin\Accounts\Index as AccountIndex;
 use App\Livewire\Admin\Categories\Form as CategoryForm;
@@ -51,6 +57,22 @@ use App\Livewire\Admin\Reports\PartyStatement;
 use App\Livewire\Admin\Reports\TrialBalance;
 use App\Livewire\Admin\Roles\Form as RoleForm;
 use App\Livewire\Admin\Roles\Index as RoleIndex;
+use App\Livewire\Admin\Sales\Dashboard as SalesDashboard;
+use App\Livewire\Admin\Sales\Documents\Form as DocumentForm;
+use App\Livewire\Admin\Sales\Documents\Index as DocumentIndex;
+use App\Livewire\Admin\Sales\Documents\Show as DocumentShow;
+use App\Livewire\Admin\Sales\Items\Form as ItemForm;
+use App\Livewire\Admin\Sales\Items\Index as ItemIndex;
+use App\Livewire\Admin\Sales\Recurring\Form as RecurringForm;
+use App\Livewire\Admin\Sales\Recurring\Index as RecurringIndex;
+use App\Livewire\Admin\Sales\Reports\Ageing as SalesAgeing;
+use App\Livewire\Admin\Sales\Reports\Breakdown as SalesBreakdown;
+use App\Livewire\Admin\Sales\Reports\Index as SalesReportIndex;
+use App\Livewire\Admin\Sales\Reports\Register as SalesRegister;
+use App\Livewire\Admin\Sales\Reports\Vat as SalesVat;
+use App\Livewire\Admin\Sales\Settings as SalesSettings;
+use App\Livewire\Admin\Sales\Templates\Form as TemplateForm;
+use App\Livewire\Admin\Sales\Templates\Index as TemplateIndex;
 use App\Livewire\Admin\Settings;
 use App\Livewire\Admin\Users\Form as UserForm;
 use App\Livewire\Admin\Users\Index as UserIndex;
@@ -70,6 +92,11 @@ Route::post('/admin/logout', function (Request $request) {
     return redirect()->route('login');
 })->middleware('auth')->name('logout');
 
+// Public, token-only document links (sales.send creates and revokes them).
+Route::middleware('throttle:60,1')->group(function (): void {
+    Route::get('/d/{token}', [SharedDocumentController::class, 'show'])->where('token', '[A-Za-z0-9]{40}')->name('documents.shared');
+    Route::get('/d/{token}/pdf', [SharedDocumentController::class, 'pdf'])->where('token', '[A-Za-z0-9]{40}')->name('documents.shared.pdf');
+});
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access', 'module'])->group(function (): void {
     Route::livewire('/', Dashboard::class)->middleware(['module.home', 'can:dashboard.view'])->name('dashboard');
     Route::livewire('/choose-company', ChooseCompany::class)->name('choose-company');
@@ -143,6 +170,40 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
             Route::livewire('/reports/sources', CrmSources::class)->name('reports.sources');
             Route::livewire('/reports/calls', CrmCallReport::class)->name('reports.calls');
             Route::livewire('/reports/performance', CrmPerformance::class)->name('reports.performance');
+        });
+    });
+    Route::prefix('sales')->name('sales.')->middleware('can:sales.view')->group(function (): void {
+        Route::livewire('/', SalesDashboard::class)->name('dashboard');
+        foreach (DocumentType::cases() as $documentType) {
+            Route::livewire('/'.$documentType->slug(), DocumentIndex::class)->defaults('type', $documentType->value)->name($documentType->slug().'.index');
+            Route::livewire('/'.$documentType->slug().'/create', DocumentForm::class)->defaults('type', $documentType->value)
+                ->middleware(['can:sales.create', 'company.selected'])->name($documentType->slug().'.create');
+        }
+        Route::livewire('/documents/{document}', DocumentShow::class)->whereNumber('document')->name('documents.show');
+        Route::livewire('/documents/{document}/edit', DocumentForm::class)->whereNumber('document')->middleware('can:sales.update')->name('documents.edit');
+        Route::get('/documents/{document}/print', DocumentPrintController::class)->whereNumber('document')->name('documents.print');
+        Route::get('/documents/{document}/pdf', DocumentPdfController::class)->whereNumber('document')->name('documents.pdf');
+        Route::get('/documents/{document}/receipts/{kind}/{id}', ReceiptController::class)->whereNumber(['document', 'id'])
+            ->whereIn('kind', ['payment', 'entry'])->name('documents.receipt');
+        Route::livewire('/items', ItemIndex::class)->name('items.index');
+        Route::livewire('/items/create', ItemForm::class)->middleware(['can:sales.setup', 'company.selected'])->name('items.create');
+        Route::livewire('/items/{item}/edit', ItemForm::class)->middleware('can:sales.setup')->name('items.edit');
+        Route::livewire('/recurring', RecurringIndex::class)->name('recurring.index');
+        Route::livewire('/recurring/create', RecurringForm::class)->middleware(['can:sales.update', 'company.selected'])->name('recurring.create');
+        Route::livewire('/recurring/{recurring}/edit', RecurringForm::class)->middleware('can:sales.update')->name('recurring.edit');
+        Route::middleware('can:sales.setup')->group(function (): void {
+            Route::livewire('/templates', TemplateIndex::class)->name('templates.index');
+            Route::livewire('/templates/create', TemplateForm::class)->middleware('company.selected')->name('templates.create');
+            Route::livewire('/templates/{template}/edit', TemplateForm::class)->name('templates.edit');
+            Route::get('/templates/{template}/preview', TemplatePreviewController::class)->name('templates.preview');
+            Route::livewire('/settings', SalesSettings::class)->name('settings');
+        });
+        Route::middleware('can:sales.reports')->group(function (): void {
+            Route::livewire('/reports', SalesReportIndex::class)->name('reports.index');
+            Route::livewire('/reports/register', SalesRegister::class)->name('reports.register');
+            Route::livewire('/reports/ageing', SalesAgeing::class)->name('reports.ageing');
+            Route::livewire('/reports/vat', SalesVat::class)->name('reports.vat');
+            Route::livewire('/reports/breakdown', SalesBreakdown::class)->name('reports.breakdown');
         });
     });
 });

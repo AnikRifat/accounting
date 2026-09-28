@@ -397,6 +397,11 @@ Follow-ups (Anik, 2026-09-29):
   Referral, Walk-in and Phone call. A used source can only be deactivated. The migration moved the
   typed `leads.source` text into the list (matching names, ignoring case) and dropped the column.
   Import matches source names and falls back to the chosen default.
+- **Profile photos (optional)** for leads, parties and employees. `App\Concerns\HasPhoto` stores them
+  as media in the `photo` collection. The `WithPhotoUpload` form trait uses a square crop, accepts
+  JPG/PNG/WebP up to 4 MB, and can replace or remove the photo. `x-avatar` shows the photo or the
+  initials. An employee's party shows the employee's photo. Employees can set their own on Profile.
+  Deleting a lead, a party or a company removes the photo files after commit.
 
 Not included: a lead→party conversion into accounting, SMS/WhatsApp, a lead card view, bulk
 reassignment, and the global header search from the reference screens.
@@ -482,10 +487,12 @@ without breaking the ledger, company-isolation or money invariants.
   Rounding: each line's tax rounds half-up to paisa; document totals are sums of rounded lines.
 - **`items`** catalogue per company (name, unit, price, tax_rate_bps, income category, is_active).
   Optional: a line can be free text.
-- **Numbering**: `App\Services\DocumentNumbers`, per company per type, prefix + year + sequence
-  (`INV-2026-0001`, `QUO-…`, `PO-…`), generated under the company row lock like journal numbers.
-  Prefix and padding editable per company. Drafts get their number on issue, so the sequence has
-  no gaps.
+- **Numbering**: `document_sequences` per company per type (prefix + zero-padded sequence, default
+  `INV-00001`, `QUO-…`, `PO-…`, `BILL-…`; prefix and padding editable, e.g. `INV-2026-`), taken in
+  `DocumentService::issue()` under the company row lock like journal numbers. Drafts get their
+  number on issue, so the sequence has no gaps; a prefix change never renumbers issued documents.
+- **Bills** (Anik: "invoice / bill"): supplier bills are a document type too. Purchase order →
+  bill → debit note mirrors quotation → invoice → credit note.
 - **Invoices post through `LedgerService` only**, as `EntryType::Income` bills, so dues, settle(),
   the Dues report, party statement and dashboard keep working unchanged:
   Cr each income category its net (after discounts); Cr **VAT Payable** (new system account 2100)
@@ -518,10 +525,20 @@ without breaking the ledger, company-isolation or money invariants.
   to `document_activities` (sent, viewed, emailed to, by whom). WhatsApp via a `wa.me/<phone>?text=`
   link carrying a **public share link** (random 40-char token on the document, revocable,
   optional expiry, view + PDF only, no login). No paid WhatsApp API. Parties gain an `email` column.
-- **Permissions** (`config/permissions.php`): `sales.view`, `invoices.create`, `invoices.update`,
-  `invoices.void`, `invoices.send`, `documents.create`, `documents.update`, `documents.delete`
-  (non-posting drafts only), `templates.manage`, `items.manage`, `sales.reports.view`. Accountant
-  gets all but `templates.manage`; data-entry gets view + create.
+- **Permissions** (`config/permissions.php`, group Sales): `sales.view`, `sales.create`,
+  `sales.update` (edit, issue, accept/decline, convert, recurring), `sales.void`, `sales.delete`
+  (drafts only), `sales.payments`, `sales.send` (email, share links), `sales.setup` (items,
+  templates, numbering, custom fields), `sales.reports`. Posting to the books additionally needs
+  `entries.create` (`entries.update` to re-post). Accountant gets all but `sales.setup`; data-entry
+  gets view + create.
+- **System accounts** get `accounts.system_key` (receivable, payable, opening_equity, vat_payable):
+  the ledger used to find AR/AP as "the system asset/liability", which VAT Payable would break.
+- **Protection**: a journal entry that belongs to a document can't be edited, voided or trashed
+  from Transactions (the list links to the document instead); parties on documents can't be
+  deleted; users who wrote documents can't be deleted; company deletion removes Sales data.
+- **Accounting dashboard** monthly income/expense now comes from income/expense account movement
+  (was the entry amount), so VAT is left out and credit/debit notes count. Same figures for
+  existing data. The Transactions list's income/expense totals still show billed amounts.
 
 ### Decisions needed
 
@@ -547,6 +564,29 @@ without breaking the ledger, company-isolation or money invariants.
 | 13.9 | Template builder: multiple templates per company, default per type, section reorder/show/hide, custom fields definitions and their inputs on the document form | 13.4, D4 | Reordering persists and shows in preview/PDF; required custom fields validated; a template of company A can't be used by B |
 | 13.10 | Reports: sales register, receivables ageing (0–30/31–60/61–90/90+), VAT report (output VAT by period and rate), sales by customer and by item, quotation conversion; Sales dashboard tiles | 13.3, 13.7 | Report totals reconcile with the ledger (VAT report = VAT Payable credits − note debits for the period); all-companies mode consolidates |
 | 13.11 | Demo data, MySQL check, README (cron + mail setup for cPanel and Dokploy), final review and behaviour verification | all | `composer check` and `npm run build` green; demo seeds invoices in every state |
+
+### Status (2026-09-29, session frish-fc)
+
+| # | Outcome | Owner | Status |
+| --- | --- | --- | --- |
+| 13.1–13.3 | Schema, enums, models, DocumentMath, DocumentService, LedgerService::postDocument, VAT Payable + system keys, module/routes/nav/permissions, payments | coordinator | done: DocumentServiceTest 12, DocumentMathTest 6, SalesLedgerIntegrationTest 3 |
+| 13.2 UI, dashboard | Documents list/form/show, Sales dashboard, WhatsApp links | agent sales-docs | done: SalesDocumentsTest 18 |
+| 13.4, 13.5, 13.9 | Renderer (3 layouts, blocks), print, PDF (mPDF, Bengali via FreeSerif), receipts, public share page, email, template builder | agent sales-render | done: SalesRenderingTest 13 |
+| 13.6–13.8, 13.10 | Items, numbering + custom fields, recurring (service, `sales:generate-recurring`, daily 06:00), reports | agent sales-setup | done: SalesSetupTest 8, RecurringInvoicesTest 11, SalesReportsTest 6 |
+| 13.11 | Demo data (JSL), README (cron, mail, gd), HTTP smoke (65 URLs × every demo role × every header scope, no 500) | coordinator | done; full suite 354/354, build and Pint clean; local MySQL migrated (accidental partial run repaired, see notes) |
+
+| 13-review | Independent review (money, isolation, sharing) + fixes | agent review + coordinator | done: 13 findings fixed, SalesSafeguardsTest 12 (two fixes mutation-checked); full suite 372/372 |
+
+Review fixes: accounts used by documents can't be hard-deleted (transfer moves document lines, items and
+document payments; the transfer balance check allows up to 12 lines); document entries are purged only with
+their company; a note can't be issued against a void invoice/bill; "Default category" lines resolve to the
+item's or the first category; ageing balances are as of the chosen date; an expired share link is replaced,
+not revived; edits that would block later posting are refused; replayed payments keep their recorder;
+employees on documents can't be deleted; templates fall back document → type default → company default;
+converting an offer/order needs `sales.update`; number-prefix matching is exact.
+
+Notes: a `migrate` on local MySQL at 00:38 ran the sales migration before its enum existed and left two
+empty columns; they were dropped and both migrations re-run cleanly (no data touched).
 
 ### Risks to watch
 

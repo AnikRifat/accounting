@@ -6,14 +6,17 @@ use App\Models\User;
 use Illuminate\Support\Str;
 
 /**
- * The application modules (Accounting, CRM, Organisation) switched from the header. A page belongs to a module by
+ * The application modules (Accounting, Sales, CRM, Organisation) switched from the header. A page belongs to a module by
  * its route name; the few shared pages (profile, company chooser, print) keep the module the user was last in.
+ * config/modules.php switches whole modules off for an install.
  */
 final class Modules
 {
     public const SESSION_KEY = 'module';
 
     public const ACCOUNTING = 'accounting';
+
+    public const SALES = 'sales';
 
     public const CRM = 'crm';
 
@@ -32,13 +35,24 @@ final class Modules
         return match (true) {
             $routeName === null, ! str_starts_with($routeName, 'admin.'), Str::is(self::SHARED_ROUTES, $routeName) => null,
             str_starts_with($routeName, 'admin.crm.') => self::CRM,
+            str_starts_with($routeName, 'admin.sales.') => self::SALES,
             Str::is(['admin.companies.*', 'admin.users.*', 'admin.roles.*', 'admin.media', 'admin.settings'], $routeName) => self::ORGANISATION,
             default => self::ACCOUNTING,
         };
     }
 
+    /** Whether this install runs the module (config/modules.php). Organisation is always on; Sales needs Accounting. */
+    public static function enabled(string $module): bool
+    {
+        return match ($module) {
+            self::ORGANISATION => true,
+            self::SALES => (bool) config('modules.sales') && (bool) config('modules.accounting'),
+            default => (bool) config('modules.'.$module),
+        };
+    }
+
     /**
-     * Modules the user can open, in header order: key => [label, emoji, home route].
+     * Enabled modules the user can open, in header order: key => [label, emoji, home route].
      *
      * @return array<string, array{0: string, 1: string, 2: string}>
      */
@@ -47,8 +61,9 @@ final class Modules
         $organisationHome = collect(self::ORGANISATION_ROUTES)->first(fn (array $route): bool => $user->can($route[1]))[0] ?? null;
 
         return array_filter([
-            self::ACCOUNTING => $user->can('dashboard.view') ? [__('Accounting'), '📒', 'admin.dashboard'] : null,
-            self::CRM => $user->can('crm.view') ? [__('CRM'), '🎯', 'admin.crm.dashboard'] : null,
+            self::ACCOUNTING => self::enabled(self::ACCOUNTING) && $user->can('dashboard.view') ? [__('Accounting'), '📒', 'admin.dashboard'] : null,
+            self::SALES => self::enabled(self::SALES) && $user->can('sales.view') ? [__('Sales'), '🧾', 'admin.sales.dashboard'] : null,
+            self::CRM => self::enabled(self::CRM) && $user->can('crm.view') ? [__('CRM'), '🎯', 'admin.crm.dashboard'] : null,
             self::ORGANISATION => $organisationHome ? [__('Organisation'), '🏢', $organisationHome] : null,
         ]);
     }
@@ -59,6 +74,7 @@ final class Modules
         $available = self::available($user);
         $module = self::forRoute(request()->route()?->getName()) ?? session(self::SESSION_KEY);
 
-        return isset($available[$module]) ? $module : (array_key_first($available) ?? self::ACCOUNTING);
+        return isset($available[$module]) ? $module
+            : (array_key_first($available) ?? (self::enabled(self::ACCOUNTING) ? self::ACCOUNTING : self::ORGANISATION));
     }
 }

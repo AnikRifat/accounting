@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Parties;
 
+use App\Livewire\Concerns\WithPhotoUpload;
 use App\Models\Company;
 use App\Models\Party;
 use App\Models\PartyCategory;
@@ -17,6 +18,8 @@ use Livewire\Features\SupportRedirects\Redirector;
 
 class Form extends Component
 {
+    use WithPhotoUpload;
+
     #[Locked]
     public ?int $partyId = null;
 
@@ -29,6 +32,8 @@ class Form extends Component
     public string $categoryId = '';
 
     public string $phone = '';
+
+    public string $email = '';
 
     public string $address = '';
 
@@ -47,6 +52,7 @@ class Form extends Component
             $this->name = $party->name;
             $this->categoryId = (string) $party->party_category_id;
             $this->phone = $party->phone ?? '';
+            $this->email = $party->email ?? '';
             $this->address = $party->address ?? '';
             $this->notes = $party->notes ?? '';
             $this->isActive = $party->is_active;
@@ -69,17 +75,21 @@ class Form extends Component
         foreach (['name', 'phone', 'address', 'notes'] as $field) {
             $this->{$field} = trim($this->{$field});
         }
+        $this->email = strtolower(trim($this->email));
         $data = $this->validate([
             'name' => ['required', 'string', 'max:150'],
             'categoryId' => ['nullable', Rule::in($this->categoryOptions($company->id, $existing?->party_category_id)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
             'phone' => ['nullable', 'string', 'max:40'],
+            'email' => ['nullable', 'email', 'max:150'],
             'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:500'],
             'isActive' => ['boolean'],
-        ], [], ['name' => __('name'), 'categoryId' => __('category'), 'phone' => __('phone'), 'address' => __('address'), 'notes' => __('notes')]);
-        $attributes = ['name' => $data['name'], 'party_category_id' => $data['categoryId'] ?: null, 'phone' => $data['phone'] ?: null, 'address' => $data['address'] ?: null,
+            ...$this->photoRules(),
+        ], [], ['name' => __('name'), 'photo' => __('photo'), 'categoryId' => __('category'), 'phone' => __('phone'), 'email' => __('email'), 'address' => __('address'), 'notes' => __('notes')]);
+        $attributes = ['name' => $data['name'], 'party_category_id' => $data['categoryId'] ?: null, 'phone' => $data['phone'] ?: null, 'email' => $data['email'] ?: null, 'address' => $data['address'] ?: null,
             'notes' => $data['notes'] ?: null, 'is_active' => $data['isActive']];
-        $existing ? $existing->update($attributes) : Party::create(['company_id' => $company->id, ...$attributes]);
+        $party = $existing ? tap($existing)->update($attributes) : Party::create(['company_id' => $company->id, ...$attributes]);
+        $this->syncPhoto($party, auth()->user());
         session()->flash('success', __('Party saved.'));
 
         return redirect()->route('admin.parties.index');
@@ -91,6 +101,7 @@ class Form extends Component
 
         return view('livewire.admin.parties.form', [
             'companyName' => Company::visibleTo(auth()->user())->whereKey($this->companyId)->value('name'),
+            'currentPhoto' => $this->partyId ? Party::query()->find($this->partyId)?->ownPhotoUrl() : null,
             'categories' => ['' => __('No category')] + $this->categoryOptions((int) $this->companyId, $current)->all(),
         ])->layout('layouts.admin');
     }

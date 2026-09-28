@@ -96,10 +96,10 @@ class LedgerServiceTest extends TestCase
         $company = Company::factory()->create();
         $accounts = $company->accounts()->orderBy('code')->get()->keyBy('code');
 
-        $this->assertSame(['1000', '1010', '1020', '1200', '2000', '3000', '4000', '4900', '5000', '5100', '5200', '5300', '5400', '5900'], $accounts->pluck('code')->values()->all());
+        $this->assertSame(['1000', '1010', '1020', '1200', '2000', '2100', '3000', '4000', '4900', '5000', '5100', '5200', '5300', '5400', '5900'], $accounts->pluck('code')->values()->all());
         $this->assertSame([PaymentType::Cash, PaymentType::Bank, PaymentType::MobileBanking], [$accounts['1000']->payment_type, $accounts['1010']->payment_type, $accounts['1020']->payment_type]);
         $this->assertSame(['1000', '1010', '1020'], $company->accounts()->paymentMethods()->orderBy('code')->pluck('code')->all());
-        $this->assertSame(['1200', '2000', '3000'], $accounts->where('is_system', true)->pluck('code')->values()->all());
+        $this->assertSame(['1200', '2000', '2100', '3000'], $accounts->where('is_system', true)->pluck('code')->values()->all());
         $this->assertSame([AccountType::Asset, AccountType::Liability], [$accounts['1200']->type, $accounts['2000']->type]);
         $this->assertNull($accounts['4000']->payment_type);
     }

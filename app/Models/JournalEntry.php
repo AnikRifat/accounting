@@ -6,6 +6,7 @@ use App\Concerns\HasMedia;
 use App\Enums\AccountType;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
+use App\Enums\SystemAccount;
 use Database\Factories\JournalEntryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -75,6 +77,12 @@ class JournalEntry extends Model
     public function settlements(): HasMany
     {
         return $this->hasMany(self::class, 'bill_id');
+    }
+
+    /** The sales document (invoice, bill or note) this entry posts; such an entry is changed only from its document. */
+    public function document(): HasOne
+    {
+        return $this->hasOne(Document::class);
     }
 
     /** Who paid (expense) or received (income) the money paid now on a bill. */
@@ -236,12 +244,11 @@ class JournalEntry extends Model
      *
      * @return array{0: string, 1: list<mixed>}
      */
-    private static function outstandingExpression(): array
+    public static function outstandingExpression(): array
     {
         $due = DB::table('journal_lines')->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->whereColumn('journal_lines.journal_entry_id', 'journal_entries.id')
-            ->where('accounts.is_system', true)
-            ->whereIn('accounts.type', [AccountType::Asset->value, AccountType::Liability->value])
+            ->whereIn('accounts.system_key', SystemAccount::dueKeys())
             ->selectRaw('COALESCE(SUM(journal_lines.debit + journal_lines.credit), 0)');
         $settled = DB::table('journal_entries as settlements')
             ->whereColumn('settlements.bill_id', 'journal_entries.id')

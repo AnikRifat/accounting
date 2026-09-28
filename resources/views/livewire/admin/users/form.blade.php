@@ -8,6 +8,7 @@
                 <x-form.input name="email" :label="__('Email address')" type="email" wire:model="email" required autocomplete="off" />
                 <x-form.input name="password" :label="__('Password')" type="password" wire:model="password" autocomplete="new-password" :help="$userId ? __('Leave blank to keep the current password.') : __('12+ characters with letters and numbers.')" />
                 <x-form.input name="password_confirmation" :label="__('Confirm password')" type="password" wire:model="password_confirmation" autocomplete="new-password" />
+                <x-form.photo :current="$currentPhoto" :name="$name" :pending="(bool) $photo" />
             </div>
             <x-form.checkbox name="isActive" :label="__('Employee is active and can sign in')" wire:model="isActive" />
         </x-card>

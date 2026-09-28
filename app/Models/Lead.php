@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Concerns\HasMedia;
+use App\Concerns\HasPhoto;
 use App\Support\Crm;
 use Database\Factories\LeadFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -22,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Lead extends Model
 {
     /** @use HasFactory<LeadFactory> */
-    use HasFactory;
+    use HasFactory, HasMedia, HasPhoto;
 
     protected function casts(): array
     {

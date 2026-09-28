@@ -31,7 +31,7 @@ class Dashboard extends Component
         }
         $user = auth()->user();
         $leads = fn (): Builder => Lead::visibleTo($user)->whereIn('leads.company_id', $context->companyIds())
-            ->with(['company:id,name', 'service:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall']);
+            ->with(['photo', 'company:id,name', 'service:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall']);
         $queues = collect(self::QUEUES)->mapWithKeys(fn (string $queue): array => [
             $queue => $leads()->followUp($queue)->orderBy('next_call_on')->orderBy('leads.id')->paginate(5, pageName: $queue.'Page'),
         ]);

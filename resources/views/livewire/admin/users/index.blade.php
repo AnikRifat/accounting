@@ -21,7 +21,7 @@
             @forelse($users as $user)
                 <tr wire:key="user-{{ $user->id }}">
                     <x-table.check :value="$user->id" :label="$user->name" />
-                    <td><div class="flex items-center gap-3"><span class="avatar" aria-hidden="true">{{ collect(preg_split('/\s+/', trim($user->name)))->take(2)->map(fn ($part) => mb_strtoupper(mb_substr($part, 0, 1)))->join('') }}</span><div><strong>{{ $user->name }}</strong><p class="muted">{{ $user->email }}@if($user->employee_code) · {{ $user->employee_code }}@endif</p>@if($user->phone)<p class="muted">{{ $user->phone }}</p>@endif</div></div></td>
+                    <td><div class="flex items-center gap-3"><x-avatar :url="$user->photoUrl()" :name="$user->name" /><div><strong>{{ $user->name }}</strong><p class="muted">{{ $user->email }}@if($user->employee_code) · {{ $user->employee_code }}@endif</p>@if($user->phone)<p class="muted">{{ $user->phone }}</p>@endif</div></div></td>
                     <td>{{ $user->designation ?: '—' }}@if($user->department)<p class="muted">{{ $user->department }}</p>@endif</td>
                     <td><x-badge tone="primary">{{ $permissions->label($user->role) }}</x-badge>@if($user->extra_roles)<p class="muted">{{ __('+ :count extra', ['count' => count($user->extra_roles)]) }}</p>@endif</td>
                     <td>{{ $user->hasPermission('companies.all') ? __('All companies') : ($user->companies->pluck('name')->join(', ') ?: '—') }}</td>

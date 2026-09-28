@@ -22,6 +22,34 @@
                 'crm.statuses.index' => ['crm.view', __('Statuses'), '🏷️'],
             ],
         ],
+        \App\Support\Modules::SALES => [
+            '' => [
+                'sales.dashboard' => ['sales.view', __('Dashboard'), '🧾'],
+            ],
+            __('Selling') => [
+                'sales.quotations.index' => ['sales.view', __('Quotations'), '💬'],
+                'sales.estimates.index' => ['sales.view', __('Estimates'), '📐'],
+                'sales.proformas.index' => ['sales.view', __('Proforma invoices'), '📄'],
+                'sales.invoices.index' => ['sales.view', __('Invoices'), '🧾'],
+                'sales.recurring.index' => ['sales.view', __('Recurring invoices'), '🔁'],
+                'sales.delivery-notes.index' => ['sales.view', __('Delivery notes'), '🚚'],
+                'sales.credit-notes.index' => ['sales.view', __('Credit notes'), '↩️'],
+            ],
+            __('Buying') => [
+                'sales.purchase-orders.index' => ['sales.view', __('Purchase orders'), '🛒'],
+                'sales.bills.index' => ['sales.view', __('Bills'), '📥'],
+                'sales.debit-notes.index' => ['sales.view', __('Debit notes'), '↪️'],
+            ],
+            __('Documents') => [
+                'sales.contracts.index' => ['sales.view', __('Contracts'), '✍️'],
+                'sales.reports.index' => ['sales.reports', __('Reports'), '📊'],
+            ],
+            __('Sales setup') => [
+                'sales.items.index' => ['sales.view', __('Items'), '📦'],
+                'sales.templates.index' => ['sales.setup', __('Templates'), '🎨'],
+                'sales.settings' => ['sales.setup', __('Numbering & fields'), '⚙️'],
+            ],
+        ],
         \App\Support\Modules::ORGANISATION => [
             __('Organisation') => [
                 'companies.index' => ['companies.view', __('Companies'), '🏢'],
@@ -48,7 +76,6 @@
         ],
     })->map(fn (array $links) => array_filter($links, fn (array $link) => $user->can($link[0])))->filter();
     $homeRoute = $modules[$module][2] ?? 'admin.profile';
-    $initials = collect(preg_split('/\s+/', trim($user->name)))->take(2)->map(fn (string $part) => mb_strtoupper(mb_substr($part, 0, 1)))->join('');
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
@@ -102,6 +129,15 @@
                             </div>
                         </div>
                     @endcanany
+                @elseif($module === \App\Support\Modules::SALES && $user->can('sales.create') && ! app(\App\Support\CompanyContext::class)->isAll())
+                    <div class="menu" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
+                        <x-button icon="plus" x-on:click="open = ! open" aria-haspopup="menu" x-bind:aria-expanded="open"><span class="quick-add-label">{{ __('New') }}</span></x-button>
+                        <div class="menu-panel" role="menu" x-show="open" x-cloak x-transition:enter="menu-enter" x-transition:enter-start="menu-hidden" x-transition:leave="menu-enter" x-transition:leave-end="menu-hidden">
+                            @foreach([[\App\Enums\DocumentType::Invoice, '🧾'], [\App\Enums\DocumentType::Quotation, '💬'], [\App\Enums\DocumentType::Bill, '📥'], [\App\Enums\DocumentType::PurchaseOrder, '🛒']] as [$newType, $newEmoji])
+                                <a class="menu-item" role="menuitem" href="{{ route('admin.sales.'.$newType->slug().'.create') }}" wire:navigate><span class="nav-emoji" aria-hidden="true">{{ $newEmoji }}</span>{{ $newType->label() }}</a>
+                            @endforeach
+                        </div>
+                    </div>
                 @elseif($module === \App\Support\Modules::ACCOUNTING && $user->can('entries.create'))
                     <div class="menu" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
                         <x-button icon="plus" x-on:click="open = ! open" aria-haspopup="menu" x-bind:aria-expanded="open"><span class="quick-add-label">{{ __('New') }}</span></x-button>
@@ -113,7 +149,7 @@
                 @endif
                 <div class="menu" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false">
                     <button type="button" class="user-trigger" x-on:click="open = ! open" aria-haspopup="menu" x-bind:aria-expanded="open" aria-label="{{ __('Account menu for :name', ['name' => $user->name]) }}">
-                        <span class="avatar" aria-hidden="true">{{ $initials }}</span><span class="user-trigger-name">{{ $user->name }}</span><x-icon name="chevron-down" width="14" height="14" />
+                        <x-avatar :url="$user->photoUrl()" :name="$user->name" /><span class="user-trigger-name">{{ $user->name }}</span><x-icon name="chevron-down" width="14" height="14" />
                     </button>
                     <div class="menu-panel" role="menu" x-show="open" x-cloak x-transition:enter="menu-enter" x-transition:enter-start="menu-hidden" x-transition:leave="menu-enter" x-transition:leave-end="menu-hidden">
                         <div class="menu-header"><p class="font-semibold text-heading">{{ $user->name }}</p><p class="muted">{{ $user->email }}</p><p class="mt-2"><x-badge tone="primary">{{ app(\App\Support\Permissions::class)->label($user->role) }}</x-badge></p></div>

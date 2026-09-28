@@ -2,8 +2,8 @@
 
 namespace App\Livewire\Admin\Reports;
 
-use App\Enums\AccountType;
 use App\Enums\EntryType;
+use App\Enums\SystemAccount;
 use App\Livewire\Admin\Reports\Concerns\HasPeriod;
 use App\Models\JournalEntry;
 use App\Models\Party;
@@ -120,12 +120,12 @@ class PartyStatement extends Component
     {
         $duePart = DB::table('journal_lines')->join('accounts', 'accounts.id', '=', 'journal_lines.account_id')
             ->whereColumn('journal_lines.journal_entry_id', 'journal_entries.id')
-            ->where('accounts.is_system', true)->whereIn('accounts.type', [AccountType::Asset->value, AccountType::Liability->value])
+            ->whereIn('accounts.system_key', SystemAccount::dueKeys())
             ->selectRaw('COALESCE(SUM(journal_lines.debit + journal_lines.credit), 0)');
 
         return JournalEntry::query()->posted()->whereIn('company_id', $companyIds)
             ->when($partyId, fn (Builder $query) => $query->where('party_id', $partyId), fn (Builder $query) => $query->whereNotNull('party_id'))
-            ->whereIn('type', [EntryType::Income, EntryType::Expense, EntryType::Receipt, EntryType::Payment])
+            ->whereIn('type', [EntryType::Income, EntryType::Expense, EntryType::Receipt, EntryType::Payment, EntryType::CreditNote, EntryType::DebitNote])
             ->select('journal_entries.*')->selectSub($duePart, 'due_part');
     }
 
@@ -141,8 +141,8 @@ class PartyStatement extends Component
         return match ($entry->type) {
             EntryType::Income => [$entry->amount, $paidNow],
             EntryType::Expense => [$paidNow, $entry->amount],
-            EntryType::Receipt => [0, $entry->amount],
-            EntryType::Payment => [$entry->amount, 0],
+            EntryType::Receipt, EntryType::CreditNote => [0, $entry->amount],
+            EntryType::Payment, EntryType::DebitNote => [$entry->amount, 0],
             default => [0, 0],
         };
     }
@@ -150,11 +150,12 @@ class PartyStatement extends Component
     /** @return array{0: string, 1: string, 2: list<string>} debit SQL, credit SQL and the bindings each of them takes */
     private function sideExpressions(): array
     {
-        $bindings = [EntryType::Income->value, EntryType::Expense->value, EntryType::Payment->value, EntryType::Receipt->value];
+        $bindings = [EntryType::Income->value, EntryType::Expense->value, EntryType::Payment->value, EntryType::Receipt->value,
+            EntryType::DebitNote->value, EntryType::CreditNote->value];
 
         return [
-            'CASE m.type WHEN ? THEN m.amount WHEN ? THEN m.amount - m.due_part WHEN ? THEN m.amount WHEN ? THEN 0 ELSE 0 END',
-            'CASE m.type WHEN ? THEN m.amount - m.due_part WHEN ? THEN m.amount WHEN ? THEN 0 WHEN ? THEN m.amount ELSE 0 END',
+            'CASE m.type WHEN ? THEN m.amount WHEN ? THEN m.amount - m.due_part WHEN ? THEN m.amount WHEN ? THEN 0 WHEN ? THEN m.amount WHEN ? THEN 0 ELSE 0 END',
+            'CASE m.type WHEN ? THEN m.amount - m.due_part WHEN ? THEN m.amount WHEN ? THEN 0 WHEN ? THEN m.amount WHEN ? THEN 0 WHEN ? THEN m.amount ELSE 0 END',
             $bindings,
         ];
     }

@@ -179,4 +179,17 @@ class PartiesTest extends TestCase
         Livewire::test(Form::class)->set('name', 'Walk-in Customer')->call('save')->assertHasNoErrors();
         $this->assertDatabaseHas('parties', ['company_id' => $company->id, 'name' => 'Walk-in Customer']);
     }
+
+    public function test_party_email_is_optional_validated_and_stored_lowercase(): void
+    {
+        $company = Company::factory()->create();
+        $this->actingAs($this->userFor('accountant', $company));
+
+        Livewire::test(Form::class)->set('name', 'Bad Mail')->set('email', 'not-an-email')->call('save')->assertHasErrors(['email' => 'email']);
+        Livewire::test(Form::class)->set('name', 'Mail Traders')->set('email', '  Accounts@Mail-Traders.COM ')->call('save')->assertHasNoErrors();
+        Livewire::test(Form::class)->set('name', 'No Mail')->call('save')->assertHasNoErrors();
+
+        $this->assertSame(['accounts@mail-traders.com', null], [Party::where('name', 'Mail Traders')->value('email'), Party::where('name', 'No Mail')->value('email')]);
+        $this->get('/admin/parties')->assertOk()->assertSee('accounts@mail-traders.com');
+    }
 }

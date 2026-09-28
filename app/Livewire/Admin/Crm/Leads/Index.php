@@ -105,7 +105,7 @@ class Index extends Component
         $phone = Crm::normalizePhone($search);
 
         return Lead::visibleTo(auth()->user())->whereIn('leads.company_id', app(CompanyContext::class)->companyIds())
-            ->with(['company:id,name', 'service:id,name', 'source:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall'])
+            ->with(['photo', 'company:id,name', 'service:id,name', 'source:id,name', 'status:id,name,tone,is_closed', 'assignee:id,name', 'latestCall'])
             ->when($search !== '', fn (Builder $query) => $query->where(fn (Builder $q) => $q->where('name', 'like', '%'.$search.'%')
                 ->orWhere('phone', 'like', '%'.($phone !== '' ? $phone : $search).'%')->orWhere('email', 'like', '%'.$search.'%')
                 ->orWhere('organization', 'like', '%'.$search.'%')))

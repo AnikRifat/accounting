@@ -2,15 +2,19 @@
 
 namespace Tests\Feature;
 
-use App\Enums\AccountType;
+use App\Enums\DocumentStatus;
+use App\Enums\DocumentType;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
+use App\Enums\SystemAccount;
 use App\Livewire\Admin\Reports\TrialBalance;
 use App\Models\Account;
 use App\Models\Company;
+use App\Models\Document;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\Party;
+use App\Models\RecurringInvoice;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
@@ -64,8 +68,8 @@ class DemoSeederTest extends TestCase
                 ->assertViewHas('balanced', true)->assertViewHas('debitTotal', fn (int $total): bool => $total > 0);
 
             $dues = $ledger->dues([$company->id]);
-            foreach ([[EntryType::Income, AccountType::Asset], [EntryType::Expense, AccountType::Liability]] as [$type, $accountType]) {
-                $control = Account::where('company_id', $company->id)->where('is_system', true)->where('type', $accountType)->sole();
+            foreach ([[EntryType::Income, SystemAccount::Receivable], [EntryType::Expense, SystemAccount::Payable]] as [$type, $key]) {
+                $control = Account::where('company_id', $company->id)->where('system_key', $key)->sole();
                 $this->assertSame($ledger->balance($control), (int) $dues->where('type', $type)->sum('outstanding'), "{$company->code} {$type->value} control account");
             }
             foreach ($dues->groupBy('party_id') as $partyId => $partyDues) {
@@ -73,6 +77,22 @@ class DemoSeederTest extends TestCase
                 $this->assertSame($bills->sum(fn (JournalEntry $bill): int => $ledger->outstanding($bill)), (int) $partyDues->sum('outstanding'));
             }
         }
+    }
+
+    public function test_demo_seeder_adds_sales_documents_in_every_state(): void
+    {
+        $this->seed(DemoSeeder::class);
+        $company = Company::query()->where('code', 'JSL')->sole();
+        $documents = Document::query()->where('company_id', $company->id)->withBalance()->get();
+
+        $this->assertSame(DocumentStatus::Converted, $documents->firstWhere('type', DocumentType::Quotation)->status);
+        $invoices = $documents->where('type', DocumentType::Invoice);
+        $this->assertSame([DueStatus::Overdue, DueStatus::PartlyPaid, DueStatus::Paid],
+            collect([DueStatus::Overdue, DueStatus::PartlyPaid, DueStatus::Paid])->filter(fn (DueStatus $status): bool => $invoices->contains(fn (Document $invoice): bool => $invoice->dueStatus() === $status))->values()->all());
+        $this->assertSame(2, $invoices->filter->isPosted()->count());
+        $this->assertTrue($documents->firstWhere('type', DocumentType::CreditNote)->isPosted());
+        $this->assertTrue($documents->firstWhere('type', DocumentType::Bill)->isPosted());
+        $this->assertSame(1, RecurringInvoice::query()->where('company_id', $company->id)->count());
     }
 
     public function test_demo_seeder_refuses_to_run_twice_without_changing_anything(): void

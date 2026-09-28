@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Users;
 
+use App\Livewire\Concerns\WithPhotoUpload;
 use App\Models\Company;
 use App\Models\User;
 use App\Support\Money;
@@ -20,6 +21,8 @@ use Livewire\Features\SupportRedirects\Redirector;
 /** Adds or edits an employee: every employee is a login account with staff details and a party in each assigned company. */
 class Form extends Component
 {
+    use WithPhotoUpload;
+
     #[Locked]
     public ?int $userId = null;
 
@@ -135,15 +138,16 @@ class Form extends Component
             'extraRoles' => ['array'], 'extraRoles.*' => ['string', 'distinct', Rule::in($allowedExtras)],
             'permissions' => ['array'], 'permissions.*' => ['string', 'distinct', Rule::in($registry->catalogue())],
             'companyIds' => ['array'], 'companyIds.*' => ['integer', 'distinct', Rule::in($visibleCompanyIds)],
+            ...$this->photoRules(),
         ];
         $data = $this->validate($rules, [], ['companyIds.*' => __('company'), 'employeeCode' => __('employee code'),
-            'monthlySalary' => __('monthly salary'), 'joinedOn' => __('joining date')]);
+            'monthlySalary' => __('monthly salary'), 'joinedOn' => __('joining date'), 'photo' => __('photo')]);
         if ($existing?->is(auth()->user())) {
             $this->addError('role', __('Ask another administrator to change your own access.'));
 
             return null;
         }
-        DB::transaction(function () use ($data, $existing, $registry, $visibleCompanyIds): void {
+        $user = DB::transaction(function () use ($data, $existing, $registry, $visibleCompanyIds): User {
             $user = $existing ?? new User;
             $user->fill(['name' => $data['name'], 'email' => $data['email']]);
             if ($data['password'] !== '') {
@@ -160,7 +164,10 @@ class Form extends Component
             $preserved = $user->companies()->whereNotIn('companies.id', $visibleCompanyIds)->pluck('companies.id')->all();
             $user->companies()->sync([...$preserved, ...array_map('intval', $data['companyIds'])]);
             $user->syncParties();
+
+            return $user;
         });
+        $this->syncPhoto($user, auth()->user());
         session()->flash('success', __('Employee saved.'));
 
         return redirect()->route('admin.users.index');
@@ -174,6 +181,7 @@ class Form extends Component
             'roleOptions' => collect($registry->assignableRoles())->mapWithKeys(fn (string $role): array => [$role => $registry->label($role).($registry->isActive($role) ? '' : ' '.__('(disabled)'))])->all(),
             'ceiling' => $registry->roleCeiling($this->role, $this->extraRoles),
             'companies' => Company::visibleTo(auth()->user())->orderBy('name')->get(['id', 'name', 'code']),
+            'currentPhoto' => $this->userId ? User::query()->find($this->userId)?->photoUrl() : null,
         ])->layout('layouts.admin');
     }
 }

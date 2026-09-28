@@ -3,10 +3,13 @@
 namespace App\Services;
 
 use App\Enums\AccountType;
+use App\Enums\DocumentType;
 use App\Enums\EntryType;
 use App\Enums\PaymentType;
+use App\Enums\SystemAccount;
 use App\Models\Account;
 use App\Models\Company;
+use App\Models\Document;
 use App\Models\JournalEntry;
 use App\Models\JournalLine;
 use App\Models\Media;
@@ -42,22 +45,23 @@ class LedgerService
     /** The `nextCode()` kind for payment methods. */
     public const PAYMENT_METHOD = 'payment';
 
-    /** @var list<array{0: string, 1: string, 2: AccountType, 3: bool, 4: bool, 5: ?PaymentType}> code, name, type, is_cash, is_system, payment_type */
+    /** @var list<array{0: string, 1: string, 2: AccountType, 3: bool, 4: ?SystemAccount, 5: ?PaymentType}> code, name, type, is_cash, system account, payment_type */
     public const DEFAULT_CHART = [
-        ['1000', 'Cash in Hand', AccountType::Asset, true, false, PaymentType::Cash],
-        ['1010', 'Bank Account', AccountType::Asset, true, false, PaymentType::Bank],
-        ['1020', 'bKash', AccountType::Asset, true, false, PaymentType::MobileBanking],
-        ['1200', 'Accounts Receivable', AccountType::Asset, false, true, null],
-        ['2000', 'Accounts Payable', AccountType::Liability, false, true, null],
-        ['3000', 'Opening Balance Equity', AccountType::Equity, false, true, null],
-        ['4000', 'Sales & Service Income', AccountType::Income, false, false, null],
-        ['4900', 'Other Income', AccountType::Income, false, false, null],
-        ['5000', 'Salaries & Wages', AccountType::Expense, false, false, null],
-        ['5100', 'Office Rent', AccountType::Expense, false, false, null],
-        ['5200', 'Utilities', AccountType::Expense, false, false, null],
-        ['5300', 'Transport & Conveyance', AccountType::Expense, false, false, null],
-        ['5400', 'Office Supplies', AccountType::Expense, false, false, null],
-        ['5900', 'Other Expenses', AccountType::Expense, false, false, null],
+        ['1000', 'Cash in Hand', AccountType::Asset, true, null, PaymentType::Cash],
+        ['1010', 'Bank Account', AccountType::Asset, true, null, PaymentType::Bank],
+        ['1020', 'bKash', AccountType::Asset, true, null, PaymentType::MobileBanking],
+        ['1200', 'Accounts Receivable', AccountType::Asset, false, SystemAccount::Receivable, null],
+        ['2000', 'Accounts Payable', AccountType::Liability, false, SystemAccount::Payable, null],
+        ['2100', 'VAT Payable', AccountType::Liability, false, SystemAccount::VatPayable, null],
+        ['3000', 'Opening Balance Equity', AccountType::Equity, false, SystemAccount::OpeningEquity, null],
+        ['4000', 'Sales & Service Income', AccountType::Income, false, null, null],
+        ['4900', 'Other Income', AccountType::Income, false, null, null],
+        ['5000', 'Salaries & Wages', AccountType::Expense, false, null, null],
+        ['5100', 'Office Rent', AccountType::Expense, false, null, null],
+        ['5200', 'Utilities', AccountType::Expense, false, null, null],
+        ['5300', 'Transport & Conveyance', AccountType::Expense, false, null, null],
+        ['5400', 'Office Supplies', AccountType::Expense, false, null, null],
+        ['5900', 'Other Expenses', AccountType::Expense, false, null, null],
     ];
 
     /** Upper bound of one entry: the largest amount App\Support\Money accepts as input. */
@@ -71,9 +75,9 @@ class LedgerService
 
     public function createDefaultAccounts(Company $company): void
     {
-        foreach (self::DEFAULT_CHART as [$code, $name, $type, $isCash, $isSystem, $paymentType]) {
+        foreach (self::DEFAULT_CHART as [$code, $name, $type, $isCash, $system, $paymentType]) {
             $company->accounts()->forceCreate(['code' => $code, 'name' => $name, 'type' => $type, 'is_cash' => $isCash,
-                'payment_type' => $paymentType, 'is_system' => $isSystem, 'is_active' => true]);
+                'payment_type' => $paymentType, 'is_system' => $system !== null, 'system_key' => $system, 'is_active' => true]);
         }
     }
 
@@ -146,7 +150,7 @@ class LedgerService
     {
         return $this->record($cashAccount->company, EntryType::Opening, [
             'entry_date' => $entryDate, 'amount' => $amount, 'debit_account_id' => $cashAccount->id,
-            'credit_account_id' => $this->systemAccount($cashAccount->company_id, AccountType::Equity)->id, 'description' => __('Opening balance'),
+            'credit_account_id' => $this->systemAccount($cashAccount->company_id, SystemAccount::OpeningEquity)->id, 'description' => __('Opening balance'),
         ], $actor);
     }
 
@@ -179,6 +183,61 @@ class LedgerService
     }
 
     /**
+     * Posts an issued invoice, bill, credit note or debit note, or re-posts it after an edit. Lines (T = total):
+     * - Invoice (income): Cr each income category its net; Cr VAT Payable the tax; Dr Accounts Receivable T.
+     * - Bill (expense): Dr each expense category its line totals (VAT is part of the cost); Cr Accounts Payable T.
+     * - Credit note (against a posted invoice): the invoice lines reversed; Dr categories net, Dr VAT Payable, Cr AR T.
+     * - Debit note (against a posted bill): Dr Accounts Payable T; Cr each expense category its line totals.
+     * Payments are settle() against the invoice or bill; notes count toward what it still owes.
+     *
+     * @throws ValidationException|AuthorizationException
+     */
+    public function postDocument(Document $document, User $actor): JournalEntry
+    {
+        $this->authorize($actor, $document->journal_entry_id ? 'entries.update' : 'entries.create', $document->company_id);
+        if (! $document->type->isPostable()) {
+            throw new LogicException("Documents of type {$document->type->value} are never posted.");
+        }
+
+        return DB::transaction(function () use ($document, $actor): JournalEntry {
+            $company = $this->lockOpenCompany($document->company_id);
+            $bill = null;
+            if ($document->type->isNote()) {
+                $billId = $document->source?->journal_entry_id;
+                $bill = $billId ? JournalEntry::query()->lockForUpdate()->find($billId) : null;
+                if ($bill === null || $bill->isVoided() || $bill->trashed()) {
+                    throw ValidationException::withMessages(['post_to_accounts' => __('Post the :type this note is for first.', ['type' => $document->type->noteFor()->label()])]);
+                }
+            }
+            if ($document->journal_entry_id) {
+                $entry = JournalEntry::query()->lockForUpdate()->findOrFail($document->journal_entry_id);
+                if ($entry->isVoided()) {
+                    throw ValidationException::withMessages(['entry' => __('Voided entries cannot be edited.')]);
+                }
+                $entry->updated_by = $actor->id;
+            } else {
+                $entry = (new JournalEntry)->forceFill([
+                    'company_id' => $company->id, 'number' => $this->nextNumber($company), 'created_by' => $actor->id, 'bill_id' => $bill?->id,
+                    'type' => match ($document->type) {
+                        DocumentType::Invoice => EntryType::Income,
+                        DocumentType::Bill => EntryType::Expense,
+                        DocumentType::CreditNote => EntryType::CreditNote,
+                        default => EntryType::DebitNote,
+                    },
+                ]);
+            }
+            [$attributes, $lines] = $this->documentPosting($entry, $document, $bill, $actor);
+            $entry->fill($attributes + ['description' => $document->type->label().' '.$document->number, 'reference' => $document->number])->save();
+            $entry->lines()->delete();
+            $entry->lines()->createMany($lines);
+            $this->assertBalanced($entry);
+            $entry->unsetRelation('lines');
+
+            return $entry;
+        }, self::DEADLOCK_ATTEMPTS);
+    }
+
+    /**
      * Re-posts an entry's lines with the data record() or settle() accepts for its type. The company,
      * type, number and (for settlements) bill never change.
      *
@@ -193,6 +252,8 @@ class LedgerService
             // Opening balances move payment-method balances and equity, so editing needs the same ability as recording.
             $this->authorize($actor, 'accounts.manage', $entry->company_id);
         }
+
+        $this->refuseDocumentEntry($entry);
 
         return DB::transaction(function () use ($entry, $data, $actor): JournalEntry {
             // bill_id never changes, so no pre-lock read is needed (it would fix a stale InnoDB snapshot).
@@ -219,6 +280,19 @@ class LedgerService
      * @throws ValidationException|AuthorizationException
      */
     public function void(JournalEntry $entry, string $reason, User $actor): JournalEntry
+    {
+        $this->refuseDocumentEntry($entry);
+
+        return $this->voidEntry($entry, $reason, $actor);
+    }
+
+    /** Voids the journal entry of a document; DocumentService::void() is the only caller. */
+    public function voidDocumentEntry(Document $document, string $reason, User $actor): JournalEntry
+    {
+        return $this->voidEntry(JournalEntry::query()->findOrFail($document->journal_entry_id), $reason, $actor);
+    }
+
+    private function voidEntry(JournalEntry $entry, string $reason, User $actor): JournalEntry
     {
         $this->authorize($actor, 'entries.void', $entry->company_id);
         $reason = trim($reason);
@@ -247,6 +321,7 @@ class LedgerService
     public function delete(JournalEntry $entry, User $actor): JournalEntry
     {
         $this->authorize($actor, 'entries.delete', $entry->company_id);
+        $this->refuseDocumentEntry($entry);
 
         return DB::transaction(function () use ($entry, $actor): JournalEntry {
             $this->lockBillOf($entry);
@@ -306,9 +381,13 @@ class LedgerService
      *
      * @throws AuthorizationException
      */
-    public function purge(JournalEntry $entry, User $actor): void
+    public function purge(JournalEntry $entry, User $actor, bool $withCompany = false): void
     {
         $this->authorize($actor, 'entries.purge', $entry->company_id);
+        if (! $withCompany) {
+            // A document's entry goes only with the whole company (RecordDeletion); otherwise the document would silently un-post.
+            $this->refuseDocumentEntry($entry);
+        }
 
         $media = DB::transaction(function () use ($entry): EloquentCollection {
             $this->lockBillOf($entry);
@@ -343,7 +422,7 @@ class LedgerService
             return 0;
         }
         $due = (int) $bill->lines()->whereIn('account_id', Account::query()->where('company_id', $bill->company_id)
-            ->where('is_system', true)->whereIn('type', [AccountType::Asset, AccountType::Liability])->select('id'))
+            ->whereIn('system_key', SystemAccount::dueKeys())->select('id'))
             ->lockForUpdate()->sum(DB::raw('debit + credit'));
 
         return $due - $this->settledAmount($bill);
@@ -452,11 +531,11 @@ class LedgerService
         return $company->code.'-'.str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
     }
 
-    /** Accounts Receivable (asset), Accounts Payable (liability) or Opening Balance Equity (equity). */
-    private function systemAccount(int $companyId, AccountType $type): Account
+    /** Accounts Receivable, Accounts Payable, Opening Balance Equity or VAT Payable of a company. */
+    public function systemAccount(int $companyId, SystemAccount $key): Account
     {
-        return Account::query()->where('company_id', $companyId)->where('is_system', true)->where('type', $type)->first()
-            ?? throw new LogicException("Company {$companyId} has no system {$type->value} account.");
+        return Account::query()->where('company_id', $companyId)->where('system_key', $key)->first()
+            ?? throw new LogicException("Company {$companyId} has no {$key->value} account.");
     }
 
     /** Sum of a bill's posted settlements, read with a lock so concurrent settlements see each other. */
@@ -546,7 +625,7 @@ class LedgerService
             $lines[] = $side($methods[$index]->id, (int) $payment['amount'], $income);
         }
         if ($unpaid > 0) {
-            $lines[] = $side($this->systemAccount($entry->company_id, $income ? AccountType::Asset : AccountType::Liability)->id, $unpaid, $income);
+            $lines[] = $side($this->systemAccount($entry->company_id, $income ? SystemAccount::Receivable : SystemAccount::Payable)->id, $unpaid, $income);
         }
 
         return [['entry_date' => $data['entry_date'], 'amount' => $total, 'party_id' => $partyId,
@@ -577,7 +656,7 @@ class LedgerService
             $errors['entry_date'] = __('The date must be on or after the date of :number.', ['number' => $bill->number]);
         }
         $this->throwIf($errors);
-        $counterpart = $this->systemAccount($entry->company_id, $bill->type === EntryType::Income ? AccountType::Asset : AccountType::Liability);
+        $counterpart = $this->systemAccount($entry->company_id, $bill->type === EntryType::Income ? SystemAccount::Receivable : SystemAccount::Payable);
         [$debit, $credit] = $entry->type === EntryType::Receipt ? [$method, $counterpart] : [$counterpart, $method];
         $amount = (int) $data['amount'];
 
@@ -585,6 +664,96 @@ class LedgerService
             ['account_id' => $debit->id, 'debit' => $amount, 'credit' => 0],
             ['account_id' => $credit->id, 'debit' => 0, 'credit' => $amount],
         ]];
+    }
+
+    /**
+     * @return array{0: array<string, mixed>, 1: list<array{account_id: int, debit: int, credit: int}>}
+     */
+    private function documentPosting(JournalEntry $entry, Document $document, ?JournalEntry $bill, User $actor): array
+    {
+        $sales = ! $document->type->isPurchase();
+        $total = $document->total;
+        $keep = $entry->exists ? $entry->lines()->pluck('account_id')->map(fn (mixed $value): int => (int) $value)->all() : [];
+        $errors = [];
+        if ($total < 1 || $total > self::MAX_AMOUNT) {
+            $errors['lines'] = __('The total must be greater than zero.');
+        }
+        $byAccount = [];
+        foreach ($document->lines as $index => $line) {
+            $share = $sales ? $line->net : $line->total;
+            if ($share === 0) {
+                continue;
+            }
+            $account = $this->account($entry, $line->account_id, $keep, "lines.{$index}.account_id", $errors,
+                fn (Account $account): bool => ! $account->is_system && $account->type === ($sales ? AccountType::Income : AccountType::Expense),
+                $sales ? __('Choose an income category.') : __('Choose an expense category.'));
+            if ($account) {
+                $byAccount[$account->id] = ($byAccount[$account->id] ?? 0) + $share;
+            }
+        }
+        if (count($byAccount) > self::MAX_PAYMENTS) {
+            $errors['lines'] = __('A document can post to at most :count categories.', ['count' => self::MAX_PAYMENTS]);
+        }
+        $partyId = $this->partyId($entry, $document->party_id, $errors);
+        if ($partyId === null && ! isset($errors['party_id'])) {
+            $errors['party_id'] = $sales ? __('Choose the customer.') : __('Choose the supplier.');
+        }
+        $date = $document->issue_date->toDateString();
+        if ($bill !== null) {
+            $available = $this->outstanding($bill) + ($entry->exists ? (int) $entry->getOriginal('amount') : 0);
+            if ($total > $available) {
+                $errors['lines'] = __('The note can\'t be more than the :amount still owed on :number.', ['amount' => Money::format($available), 'number' => $document->source->number]);
+            }
+            if ($date < $bill->entry_date->toDateString()) {
+                $errors['issue_date'] = __('The date must be on or after the date of :number.', ['number' => $document->source->number]);
+            }
+            if ($partyId !== null && $partyId !== (int) $bill->party_id) {
+                $errors['party_id'] = __('A note is for the same party as its :type.', ['type' => $document->type->noteFor()->label()]);
+            }
+        } else {
+            $due = $document->due_date?->toDateString() ?? $date;
+            if ($due < $date) {
+                $errors['due_date'] = __('The due date must be on or after the entry date.');
+            }
+            if ($entry->exists && ($settled = $this->settledAmount($entry)) > 0) {
+                if ($total < $settled) {
+                    $errors['lines'] = __('The total can\'t be less than the :amount already paid or credited.', ['amount' => Money::format($settled)]);
+                }
+                if ($partyId !== (int) $entry->getOriginal('party_id')) {
+                    $errors['party_id'] = __('The party can\'t change once receipts or payments are recorded.');
+                }
+                $firstSettlement = JournalEntry::query()->where('bill_id', $entry->id)->posted()->lockForUpdate()->min('entry_date');
+                if ($date > $firstSettlement) {
+                    $errors['issue_date'] = __('The date can\'t be after the first receipt or payment.');
+                }
+            }
+        }
+        $this->throwIf($errors);
+
+        $side = fn (int $accountId, int $amount, bool $debit): array => ['account_id' => $accountId, 'debit' => $debit ? $amount : 0, 'credit' => $debit ? 0 : $amount];
+        // Invoices and debit notes credit the categories; bills and credit notes debit them.
+        $categoriesOnDebit = in_array($document->type, [DocumentType::Bill, DocumentType::CreditNote], true);
+        $lines = [];
+        foreach ($byAccount as $accountId => $amount) {
+            $lines[] = $side($accountId, $amount, $categoriesOnDebit);
+        }
+        if ($sales && $document->tax_total > 0) {
+            $lines[] = $side($this->systemAccount($entry->company_id, SystemAccount::VatPayable)->id, $document->tax_total, $categoriesOnDebit);
+        }
+        $lines[] = $side($this->systemAccount($entry->company_id, $sales ? SystemAccount::Receivable : SystemAccount::Payable)->id, $total, ! $categoriesOnDebit);
+
+        return [['entry_date' => $date, 'amount' => $total, 'party_id' => $partyId,
+            'due_date' => $bill === null ? ($document->due_date?->toDateString() ?? $date) : null,
+            'paid_by' => $entry->getOriginal('paid_by') ?? $actor->id], $lines];
+    }
+
+    /** A document's journal entry changes only through its document (DocumentService), never directly. */
+    private function refuseDocumentEntry(JournalEntry $entry): void
+    {
+        $number = Document::query()->where('journal_entry_id', $entry->id)->value('number');
+        if ($number !== null) {
+            throw ValidationException::withMessages(['entry' => __('This entry belongs to :number. Change it from the document.', ['number' => $number])]);
+        }
     }
 
     /**
@@ -603,7 +772,7 @@ class LedgerService
         $isMethod = fn (Account $account): bool => $account->isPaymentMethod();
         [$creditFits, $debitMessage, $creditMessage] = $entry->type === EntryType::Transfer
             ? [$isMethod, __('Choose the payment method receiving the money.'), __('Choose the payment method the money leaves.')]
-            : [fn (Account $account): bool => $account->is_system && $account->type === AccountType::Equity,
+            : [fn (Account $account): bool => $account->system_key === SystemAccount::OpeningEquity,
                 __('Opening balances are recorded for payment methods.'), __('Opening balances are posted against Opening Balance Equity.')];
         $errors = [];
         $debit = $this->account($entry, $data['debit_account_id'], $keep, 'debit_account_id', $errors, $isMethod, $debitMessage);

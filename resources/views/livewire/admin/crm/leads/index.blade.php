@@ -28,7 +28,7 @@
             @forelse($leads as $lead)
                 <tr wire:key="lead-{{ $lead->id }}">
                     <x-table.check :value="$lead->id" :label="$lead->displayName()" />
-                    <td><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>@if($lead->organization)<p class="muted">{{ $lead->organization }}</p>@endif</td>
+                    <td><div class="flex items-center gap-3"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" /><div><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>@if($lead->organization)<p class="muted">{{ $lead->organization }}</p>@endif</div></div></td>
                     <td class="nowrap"><a class="text-link" href="tel:{{ $lead->phone }}">{{ $lead->phone }}</a></td>
                     @if($showCompany)<td>{{ $lead->company->name }}</td>@endif
                     <td><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge></td>

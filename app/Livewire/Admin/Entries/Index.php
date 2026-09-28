@@ -172,7 +172,7 @@ class Index extends Component
     /** @return Builder<JournalEntry> the list's rows, in the list's order */
     protected function tableQuery(): Builder
     {
-        return $this->filteredEntries()->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'payer:id,name'])
+        return $this->filteredEntries()->withOutstanding()->with(['company:id,name,code', 'lines.account:id,code,name,type,is_cash,is_system', 'party:id,name', 'bill:id,number', 'payer:id,name', 'document:id,journal_entry_id,number'])
             ->orderByDesc('entry_date')->orderByDesc('id');
     }
 

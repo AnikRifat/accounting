@@ -19,6 +19,7 @@ Engineering rules for contributors and agents: [AGENTS.md](AGENTS.md).
 | Categories and payment methods | Managed without account codes, which are assigned automatically. On All companies, the category list is combined and a new category is added to every company. Payment methods (Cash, Bank, bKash/Nagad, card) have opening balances. |
 | Reports | Income statement (accrual: dues count in full on the entry date), dues (who owes you and whom you owe, with overdue items), party statement, account ledger, trial balance, employee cost, and the chart of accounts. Bangladesh fiscal-year presets (1 July–30 June). Printable. |
 | Dashboard | This month versus last month, receivable/payable/overdue totals and the next dues, cash position per payment method, a six-month income/expense chart, recent transactions. |
+| Sales module | Quotations, estimates and proforma invoices (accept or decline, then convert to an invoice); invoices with items, per-line and whole-document discounts, and VAT (exclusive or inclusive, per line); delivery notes and credit notes; purchase orders, supplier bills and debit notes; contracts with placeholders. Numbering per company and type (editable prefix; drafts get their number when issued). Partial and full payments with receipts. **Post to accounts** is off by default: when switched on, an invoice or bill posts to the books (income net of VAT, VAT Payable, receivable or payable), and its payments and notes follow. Branded templates (logo, colours, font, three layouts, drag-to-reorder blocks, custom fields), PDF download, print, email with the PDF attached, and share links for WhatsApp. Monthly/weekly/quarterly/yearly recurring invoices created as drafts. Reports: sales register, receivables/payables ageing, VAT (reconciled with the books), and sales by customer and item. |
 | CRM module | Switch between **Accounting**, **CRM** and **Organisation** (companies, employees, roles, media, settings) in the header (right side). Same company switcher and company isolation. Leads (phone is unique per company; Bangladeshi numbers are normalised), a call and visit log, and follow-ups from each lead's next call date: today, overdue and upcoming. Services, lead sources and statuses per company; closed lead statuses end follow-ups. Dashboard queue, insights, a Reports section (lead pipeline, lead sources, call outcomes, team performance), CSV/Excel lead import, and export or print of the lead and call lists. Sales reps see only the leads assigned to them (`crm.leads.all` shows every lead). |
 | Employees and access | Employees are user accounts that sign in, with staff details (code, designation, department, phone, monthly salary, joining date). A user can belong to several companies and gets a party in each. One super admin (created with `php artisan app:create-admin`) can do everything. The other roles (administrator, accountant, data-entry, custom roles) have editable permissions and per-user denials. User managers can't take over accounts with more power than their own. |
 
@@ -27,7 +28,7 @@ assets and inventory.
 
 ## Requirements
 
-- PHP 8.3+ with `pdo_mysql` (or `pdo_sqlite` locally), `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `curl`
+- PHP 8.3+ with `pdo_mysql` (or `pdo_sqlite` locally), `mbstring`, `openssl`, `tokenizer`, `xml`, `ctype`, `fileinfo`, `curl`, and `gd` (PDF images)
 - Composer 2
 - Node.js 22+ and npm, only to build the CSS and JS. The app doesn't need Node when it runs.
 - MySQL 5.7.7+ / 8.x or MariaDB 10.2.2+ (InnoDB, utf8mb4) in production. SQLite works locally.
@@ -116,8 +117,9 @@ database, runs pending migrations, links storage and caches config, routes, view
 5. **Domain** (Domains tab): add the domain with **container port 8080** and HTTPS (Let's Encrypt).
 6. **Deploy**, then create the owner once from the application's Terminal:
    `php artisan app:create-admin`.
-7. **Scheduler** (optional, only prunes expired API tokens): Schedules tab, daily,
-   command `php artisan sanctum:prune-expired --hours=24`.
+7. **Scheduler**: Schedules tab, every hour (or at least daily, after 06:00 Dhaka time), command
+   `php artisan schedule:run`. It creates the day's recurring invoice drafts and prunes expired API tokens.
+   Also set the mail variables from the cPanel section below so documents can be emailed.
 8. **Backups**: these are the company's books. On the database, add a daily backup to an S3
    destination and test a restore. Back up the `frish-storage` volume too.
 
@@ -152,6 +154,15 @@ long-running process at runtime.
    DB_PASSWORD=...
    SESSION_SECURE_COOKIE=true
    QUEUE_CONNECTION=sync
+   # Emailing invoices: use the cPanel email account's SMTP settings (sent synchronously, no queue).
+   MAIL_MAILER=smtp
+   MAIL_HOST=mail.your-domain
+   MAIL_PORT=465
+   MAIL_SCHEME=smtps
+   MAIL_USERNAME=billing@your-domain
+   MAIL_PASSWORD=...
+   MAIL_FROM_ADDRESS=billing@your-domain
+   MAIL_FROM_NAME="${APP_NAME}"
    ```
 5. **First-time commands** (cPanel Terminal or SSH):
    ```sh
@@ -161,8 +172,9 @@ long-running process at runtime.
    php artisan config:cache && php artisan route:cache && php artisan view:cache
    ```
    Re-run the three cache commands after every update, and run `php artisan migrate --force` when new migrations ship.
-6. **Cron** (cPanel → Cron Jobs, once a day or every minute): `php /home/USER/path-to-app/artisan schedule:run`.
-   It only prunes expired API tokens, so the accounting app works without it.
+6. **Cron** (cPanel → Cron Jobs, hourly or every minute): `php /home/USER/path-to-app/artisan schedule:run`.
+   It creates recurring invoice drafts every day at 06:00 and prunes expired API tokens. Without it, use
+   "Generate due now" on the Recurring invoices page. `storage/app/mpdf` must be writable (PDF temp files).
 7. **Backups**: these are the company's books. Turn on cPanel's daily database backups, or JetBackup if the host offers it, and test a restore.
 
 Never run `migrate:fresh` or `db:seed` on the production database. The demo seeder refuses there anyway.
@@ -174,5 +186,9 @@ Never run `migrate:fresh` or `db:seed` on the production database. The demo seed
   Settings has a switch that would turn it on, so leave it off unless the API is actually needed.
 - Entry numbering is protected by a row lock plus a unique index. It has been verified on MySQL 9.7
   locally but not under real concurrent load.
+- Share links (`/d/<token>`) open a document without signing in. Anyone holding the link can see it
+  until it expires or is revoked from the document page.
+- Input VAT on supplier bills is booked as part of the cost; there is no input-VAT credit or Mushak
+  return. A credit note can reduce only what an invoice still owes (record a cash refund as an expense).
 - Interface text is English. Every string goes through Laravel's translator, so a Bangla
   translation can be added as `lang/bn.json` without code changes.

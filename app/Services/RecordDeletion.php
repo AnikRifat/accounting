@@ -7,10 +7,19 @@ use App\Models\Account;
 use App\Models\Company;
 use App\Models\CrmService;
 use App\Models\CrmStatus;
+use App\Models\Document;
+use App\Models\DocumentField;
+use App\Models\DocumentLine;
+use App\Models\DocumentPayment;
+use App\Models\DocumentSequence;
+use App\Models\DocumentTemplate;
+use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\LeadCall;
+use App\Models\Media;
 use App\Models\Party;
+use App\Models\RecurringInvoice;
 use App\Models\User;
 use App\Support\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -50,6 +59,8 @@ class RecordDeletion
     {
         return match (true) {
             $record instanceof Account && $record->is_system => __('System accounts are maintained by the application and cannot be deleted.'),
+            $record instanceof Party && Document::query()->where('party_id', $record->id)->exists() => __('This party appears on sales documents. Deactivate it instead, so the documents keep their customer or supplier.'),
+            $record instanceof User && $this->hasSalesRecords($record) => __('This employee appears on sales documents, as their party or as the one who wrote them. Deactivate the employee instead, so the document history keeps their name.'),
             $record instanceof Party && $record->isEmployee() => __('This party is an employee. Remove the employee from the company on the Users page instead.'),
             $record instanceof Account && $this->isLastActivePaymentMethod($record) => __('A company needs at least one active payment method. Add or activate another one first.'),
             $record instanceof User && $record->isRoot() => __('The super admin cannot be deleted.'),
@@ -88,6 +99,9 @@ class RecordDeletion
             if ($this->relatedEntries($record)->lockForUpdate()->exists()) {
                 throw ValidationException::withMessages(['record' => __('This record is used by transactions. Transfer them or delete them permanently.')]);
             }
+            if ($record instanceof Account && $this->usedOnDocuments($record)) {
+                throw ValidationException::withMessages(['record' => __('This account is used on sales documents or items. Deactivate it instead.')]);
+            }
             $record->delete();
         });
     }
@@ -112,6 +126,10 @@ class RecordDeletion
                         : __('Some transactions use both accounts. Choose another account.')]);
                 }
                 DB::table('journal_lines')->whereIn('journal_entry_id', $entryIds)->where('account_id', $from->id)->update(['account_id' => $to->id]);
+                // Sales documents, items and document payments follow, so documents keep posting to a real account.
+                foreach ([DocumentLine::class, Item::class, DocumentPayment::class] as $model) {
+                    $model::query()->where('account_id', $from->id)->update(['account_id' => $to->id]);
+                }
             }
             $this->assertBalanced($entryIds);
             $from->delete();
@@ -133,6 +151,9 @@ class RecordDeletion
         Gate::forUser($actor)->authorize('entries.purge');
         $this->refuseBlocked($record);
         DB::transaction(function () use ($record, $actor): void {
+            if ($record instanceof Account && ($this->usedOnDocuments($record) || $this->relatedEntries($record)->whereHas('document')->exists())) {
+                throw ValidationException::withMessages(['record' => __('This account is used by sales documents. Transfer its transactions to another account instead, or deactivate it.')]);
+            }
             $this->purgeEntries($this->relatedEntries($record)->lockForUpdate()->orderBy('id')->pluck('id')->all(), $actor);
             $record->delete();
         });
@@ -149,7 +170,13 @@ class RecordDeletion
             if ($entryIds !== []) {
                 Gate::forUser($actor)->authorize('entries.purge');
             }
-            $this->purgeEntries($entryIds, $actor);
+            $this->purgeEntries($entryIds, $actor, true);
+            // Bulk deletes skip model events, so the photos of the company's parties and leads go explicitly.
+            $photos = Media::query()->where(fn (Builder $media) => $media
+                ->where(fn (Builder $q) => $q->where('mediable_type', (new Party)->getMorphClass())->whereIn('mediable_id', Party::query()->where('company_id', $company->id)->select('id')))
+                ->orWhere(fn (Builder $q) => $q->where('mediable_type', (new Lead)->getMorphClass())->whereIn('mediable_id', Lead::query()->where('company_id', $company->id)->select('id'))))->get();
+            DB::afterCommit(fn () => $photos->each(fn (Media $media) => app(MediaService::class)->detach($media)));
+            $this->deleteSalesData($company);
             LeadCall::query()->where('company_id', $company->id)->delete();
             Lead::query()->where('company_id', $company->id)->delete();
             CrmStatus::query()->where('company_id', $company->id)->delete();
@@ -189,6 +216,42 @@ class RecordDeletion
         }
     }
 
+    /**
+     * Removes a company's Sales module data (documents with their lines, payments and activity, recurring schedules,
+     * templates with their logo and signature files, items, numbering and custom fields). Its journal entries are
+     * purged before this, so no document still points at one.
+     */
+    private function deleteSalesData(Company $company): void
+    {
+        $templates = DocumentTemplate::query()->where('company_id', $company->id)->pluck('id');
+        $files = Media::query()->where('mediable_type', (new DocumentTemplate)->getMorphClass())->whereIn('mediable_id', $templates)->get();
+        RecurringInvoice::query()->where('company_id', $company->id)->delete();
+        // source_id restricts deleting a document that others came from, so the links go first.
+        Document::query()->where('company_id', $company->id)->update(['source_id' => null]);
+        Document::query()->where('company_id', $company->id)->delete();
+        DocumentSequence::query()->where('company_id', $company->id)->delete();
+        DocumentTemplate::query()->whereKey($templates)->delete();
+        DocumentField::query()->where('company_id', $company->id)->delete();
+        Item::query()->where('company_id', $company->id)->delete();
+        DB::afterCommit(fn () => $files->each(fn (Media $media) => app(MediaService::class)->detach($media)));
+    }
+
+    /** Whether document lines, items or document payments point at the account (their foreign keys would null it). */
+    private function usedOnDocuments(Account $account): bool
+    {
+        return DocumentLine::query()->where('account_id', $account->id)->exists() || Item::query()->where('account_id', $account->id)->exists()
+            || DocumentPayment::query()->where('account_id', $account->id)->exists();
+    }
+
+    private function hasSalesRecords(User $user): bool
+    {
+        return Document::query()->where(fn (Builder $documents) => $documents->where('created_by', $user->id)
+            ->orWhere('updated_by', $user->id)->orWhere('voided_by', $user->id)
+            ->orWhereIn('party_id', $user->parties()->select('id')))->exists()
+            || DocumentPayment::query()->where('created_by', $user->id)->exists()
+            || RecurringInvoice::query()->where('created_by', $user->id)->exists();
+    }
+
     /** @return Builder<JournalEntry> every transaction, trashed included, that points at the record */
     private function relatedEntries(Account|Party|Company|User $record): Builder
     {
@@ -205,13 +268,13 @@ class RecordDeletion
     }
 
     /** @param list<int> $entryIds in ascending id order */
-    private function purgeEntries(array $entryIds, User $actor): void
+    private function purgeEntries(array $entryIds, User $actor, bool $withCompany = false): void
     {
         // Settlements first; purging a bill also removes settlements that may be later in the list.
         foreach (array_reverse($entryIds) as $id) {
             $entry = JournalEntry::withTrashed()->find($id);
             if ($entry) {
-                $this->ledger->purge($entry, $actor);
+                $this->ledger->purge($entry, $actor, $withCompany);
             }
         }
     }
@@ -227,7 +290,7 @@ class RecordDeletion
             return;
         }
         $unbalanced = DB::table('journal_lines')->whereIn('journal_entry_id', $entryIds)->groupBy('journal_entry_id')
-            ->havingRaw('SUM(debit) <> SUM(credit) OR COUNT(*) < 2 OR COUNT(*) > 3 OR COUNT(DISTINCT account_id) <> COUNT(*)')
+            ->havingRaw('SUM(debit) <> SUM(credit) OR COUNT(*) < 2 OR COUNT(*) > ? OR COUNT(DISTINCT account_id) <> COUNT(*)', [LedgerService::MAX_PAYMENTS + 2])
             ->pluck('journal_entry_id');
         if ($unbalanced->isNotEmpty()) {
             throw new LogicException('Transfer left unbalanced entries: '.$unbalanced->join(', '));

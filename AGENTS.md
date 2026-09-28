@@ -52,11 +52,13 @@ session timezone `+06:00`.
   has no parties. Salary is shown only to users with `users.update`.
 - **UI text** is English and every user-facing string goes through `__()` with the English text
   as key, so `lang/bn.json` can be added later without code changes.
-- **Modules** (`App\Support\Modules`): Accounting, CRM and Organisation, switched in the header. A page
-  belongs to a module by route name (`admin.crm.*` is CRM; companies, employees, roles, media and
-  settings are Organisation). Profile, company chooser and print keep the last module
+- **Modules** (`App\Support\Modules`): Accounting, Sales, CRM and Organisation, switched in the header. A page
+  belongs to a module by route name (`admin.crm.*` is CRM, `admin.sales.*` is Sales; companies, employees, roles,
+  media and settings are Organisation). Profile, company chooser and print keep the last module
   (`RememberModule` middleware). A user without the accounting dashboard landing on `/admin` goes to
-  the first module they can open.
+  the first module they can open. `config/modules.php` (`MODULE_ACCOUNTING`, `MODULE_SALES`, `MODULE_CRM`)
+  switches modules off per install (`Modules::enabled()`): they leave the header, and their routes, Livewire
+  updates, share links and scheduled jobs 404 or stop. Sales needs Accounting; Organisation is always on.
 - **CRM** follows the same company rules. Leads, calls, services and statuses are per company. Lead
   visibility goes through `Lead::visibleTo()` / `LeadCall::visibleTo()`: without `crm.leads.all` a
   user sees only leads assigned to them. Calls are written only through `App\Services\CallLogger`:

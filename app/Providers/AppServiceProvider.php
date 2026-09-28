@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\RememberModule;
 use App\Models\User;
 use App\Support\Permissions;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -9,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,6 +29,8 @@ class AppServiceProvider extends ServiceProvider
         foreach (app(Permissions::class)->catalogue() as $permission) {
             Gate::define($permission, fn (User $user): bool => $user->hasPermission($permission));
         }
+        // Livewire updates re-run this against the page's route, so a disabled module's components stay closed.
+        Livewire::addPersistentMiddleware([RememberModule::class]);
         RateLimiter::for('api', fn (Request $request): Limit => Limit::perMinute(120)
             ->by($request->user()?->id ?? $request->ip()));
         RateLimiter::for('auth', fn (Request $request): array => [

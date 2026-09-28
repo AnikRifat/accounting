@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Concerns\HasMedia;
+use App\Concerns\HasPhoto;
 use Database\Factories\PartyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,11 +15,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Who paid, received or was spent on. Employee parties belong to a user and are created and kept in
  * sync by User::syncParties(); `user_id` is deliberately not fillable.
  */
-#[Fillable(['company_id', 'party_category_id', 'name', 'phone', 'address', 'notes', 'is_active'])]
+#[Fillable(['company_id', 'party_category_id', 'name', 'phone', 'email', 'address', 'notes', 'is_active'])]
 class Party extends Model
 {
     /** @use HasFactory<PartyFactory> */
-    use HasFactory;
+    use HasFactory, HasMedia, HasPhoto {
+        photoUrl as ownPhotoUrl;
+    }
 
     protected $attributes = ['is_active' => true];
 
@@ -40,6 +44,12 @@ class Party extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** The party's own photo, or for an employee party the employee's photo. */
+    public function photoUrl(): ?string
+    {
+        return $this->ownPhotoUrl() ?? ($this->isEmployee() ? $this->user?->photoUrl() : null);
     }
 
     public function isEmployee(): bool

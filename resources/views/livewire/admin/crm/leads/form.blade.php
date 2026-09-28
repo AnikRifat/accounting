@@ -12,6 +12,7 @@
                 <x-form.input name="email" :label="__('Email')" type="email" wire:model="email" maxlength="150" autocomplete="off" />
                 <x-form.input name="organization" :label="__('Organisation')" wire:model="organization" maxlength="150" autocomplete="off" />
                 <x-form.input name="address" :label="__('Address')" wire:model="address" maxlength="255" autocomplete="off" />
+                <x-form.photo :current="$currentPhoto" :name="$name" :pending="(bool) $photo" />
                 <x-form.select name="sourceId" :label="__('Source')" :options="$sources" wire:model="sourceId" :help="__('Manage the list under CRM setup, Sources.')" />
             </div>
         </x-card>

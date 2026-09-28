@@ -64,7 +64,7 @@ class Index extends Component
     {
         $search = mb_substr(trim($this->search), 0, 100);
 
-        return Party::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company', 'category'])
+        return Party::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company', 'category', 'photo', 'user.photo'])
             ->when($this->kind === 'employee', fn ($query) => $query->whereNotNull('user_id'))
             ->when($this->kind === 'custom', fn ($query) => $query->whereNull('user_id'))
             ->when($this->category === 'none', fn ($query) => $query->whereNull('party_category_id'))
@@ -82,6 +82,7 @@ class Index extends Component
             'category' => ['label' => __('Category'), 'value' => fn (Party $party): ?string => $party->category?->name],
             'type' => ['label' => __('Type'), 'value' => fn (Party $party): string => $party->isEmployee() ? __('Employee') : __('Custom')],
             'phone' => ['label' => __('Phone'), 'value' => fn (Party $party): ?string => $party->phone],
+            'email' => ['label' => __('Email'), 'value' => fn (Party $party): ?string => $party->email],
             'address' => ['label' => __('Address'), 'value' => fn (Party $party): ?string => $party->address],
             'notes' => ['label' => __('Notes'), 'value' => fn (Party $party): ?string => $party->notes],
             'status' => ['label' => __('Status'), 'value' => fn (Party $party): string => $party->is_active ? __('Active') : __('Inactive')],

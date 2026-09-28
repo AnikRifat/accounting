@@ -10,6 +10,8 @@ enum EntryType: string
     case Opening = 'opening';
     case Receipt = 'receipt';
     case Payment = 'payment';
+    case CreditNote = 'credit_note';
+    case DebitNote = 'debit_note';
 
     public function label(): string
     {
@@ -20,6 +22,8 @@ enum EntryType: string
             self::Opening => __('Opening balance'),
             self::Receipt => __('Receipt'),
             self::Payment => __('Payment'),
+            self::CreditNote => __('Credit note'),
+            self::DebitNote => __('Debit note'),
         };
     }
 
@@ -32,6 +36,12 @@ enum EntryType: string
     public function isSettlement(): bool
     {
         return $this === self::Receipt || $this === self::Payment;
+    }
+
+    /** Credit notes (against an income bill) and debit notes (against an expense bill); posted only from their document. */
+    public function isNote(): bool
+    {
+        return $this === self::CreditNote || $this === self::DebitNote;
     }
 
     /** @return list<self> Types that staff record through the entry form. */
