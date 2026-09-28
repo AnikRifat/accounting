@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Http\Middleware\RememberModule;
 use App\Models\User;
+use App\Support\Configuration;
 use App\Support\Permissions;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(Permissions::class);
+        $this->app->scoped(Configuration::class);
     }
 
     public function boot(): void

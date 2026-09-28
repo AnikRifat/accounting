@@ -57,8 +57,12 @@ session timezone `+06:00`.
   media and settings are Organisation). Profile, company chooser and print keep the last module
   (`RememberModule` middleware). A user without the accounting dashboard landing on `/admin` goes to
   the first module they can open. `config/modules.php` (`MODULE_ACCOUNTING`, `MODULE_SALES`, `MODULE_CRM`)
-  switches modules off per install (`Modules::enabled()`): they leave the header, and their routes, Livewire
-  updates, share links and scheduled jobs 404 or stop. Sales needs Accounting; Organisation is always on.
+  says which modules an install includes; Settings switches the included ones on and off (`Modules::enabled()`).
+  A disabled module leaves the header, and its routes, Livewire updates, share links and scheduled jobs 404 or
+  stop. Sales needs Accounting; Organisation is always on.
+- **Settings** (`/admin/settings`, one tab per module) are defined only in `App\Support\Configuration::sections()`
+  (type, default, rules) and read with `Configuration::get('module.key')`. A row in `application_settings` exists
+  only while a value differs from its default. A new setting must be read somewhere; no switches that do nothing.
 - **CRM** follows the same company rules. Leads, calls, services and statuses are per company. Lead
   visibility goes through `Lead::visibleTo()` / `LeadCall::visibleTo()`: without `crm.leads.all` a
   user sees only leads assigned to them. Calls are written only through `App\Services\CallLogger`:

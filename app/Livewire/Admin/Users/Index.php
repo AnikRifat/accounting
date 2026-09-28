@@ -6,6 +6,7 @@ use App\Livewire\Concerns\WithFormSheet;
 use App\Livewire\Concerns\WithTableTools;
 use App\Models\User;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Permissions;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
@@ -35,7 +36,7 @@ class Index extends Component
         Gate::authorize('users.view');
 
         return view('livewire.admin.users.index', [
-            'users' => $this->tableQuery()->paginate(15),
+            'users' => $this->tableQuery()->paginate(Configuration::get('general.rows_per_page')),
             'permissions' => app(Permissions::class),
         ])->layout('layouts.admin');
     }

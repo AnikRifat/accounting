@@ -17,6 +17,7 @@ use App\Models\Party;
 use App\Services\DocumentService;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\DocumentMath;
 use App\Support\Money;
 use Illuminate\Contracts\View\View;
@@ -119,6 +120,11 @@ class Form extends Component
         $this->type = $documentType->value;
         $this->companyId = $company->id;
         $this->issueDate = today()->toDateString();
+        if ($documentType->dueLabel() !== null && ($dueDays = Configuration::get('sales.default_due_days')) !== null) {
+            $this->dueDate = today()->addDays($dueDays)->toDateString();
+        }
+        $this->taxInclusive = Configuration::get('sales.tax_inclusive');
+        $this->postToAccounts = $this->canPost($documentType) && Configuration::get('sales.post_to_accounts');
         $sequence = DocumentSequence::for($company->id, $documentType);
         $this->templateId = (string) $sequence->template_id;
         $this->notes = (string) $sequence->default_notes;
@@ -439,9 +445,9 @@ class Form extends Component
     /** @return array{key: string, item: string, description: string, quantity: string, unit: string, price: string, discountType: string, discount: string, vat: string, account: string} */
     private function blankRow(): array
     {
-        // D2: sales lines start at the 15% standard VAT rate; purchases start at none.
+        // D2: sales lines start at the VAT rate chosen in Settings (15% standard); purchases start at none.
         return ['key' => Str::random(8), 'item' => '', 'description' => '', 'quantity' => '1', 'unit' => '', 'price' => '', 'discountType' => '',
-            'discount' => '', 'vat' => DocumentType::from($this->type)->isPurchase() ? '0' : '15', 'account' => (string) $this->categories()->first()?->id];
+            'discount' => '', 'vat' => DocumentType::from($this->type)->isPurchase() ? '0' : Configuration::get('sales.default_vat'), 'account' => (string) $this->categories()->first()?->id];
     }
 
     /** A row nobody has filled in (no item, description or price) is left out on save. */

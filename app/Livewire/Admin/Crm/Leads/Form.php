@@ -10,6 +10,7 @@ use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\User;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Crm;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -79,7 +80,7 @@ class Form extends Component
         } else {
             $this->companyId = app(CompanyContext::class)->company()?->id;
             $this->statusId = (string) ($this->companyId ? Crm::defaultLeadStatusId($this->companyId) : '');
-            $this->assignedTo = $user->isRoot() ? '' : (string) $user->id;
+            $this->assignedTo = $user->isRoot() || ! Configuration::get('crm.assign_to_creator') ? '' : (string) $user->id;
         }
     }
 

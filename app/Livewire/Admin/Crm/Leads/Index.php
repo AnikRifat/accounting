@@ -7,6 +7,7 @@ use App\Livewire\Concerns\WithFormSheet;
 use App\Livewire\Concerns\WithTableTools;
 use App\Models\Lead;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Crm;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
@@ -78,7 +79,7 @@ class Index extends Component
         return view('livewire.admin.crm.leads.index', [
             'showCompany' => app(CompanyContext::class)->isAll(),
             'seesAll' => Gate::allows('crm.leads.all'),
-            'leads' => $this->tableQuery()->paginate(25),
+            'leads' => $this->tableQuery()->paginate(Configuration::get('general.rows_per_page')),
             'services' => Crm::serviceOptions($companyIds),
             'sources' => Crm::sourceOptions($companyIds),
             'statuses' => Crm::statusOptions($companyIds, CrmStatusType::Lead),

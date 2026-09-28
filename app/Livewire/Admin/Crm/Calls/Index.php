@@ -8,6 +8,7 @@ use App\Livewire\Concerns\WithFormSheet;
 use App\Livewire\Concerns\WithTableTools;
 use App\Models\LeadCall;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Crm;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
@@ -82,7 +83,7 @@ class Index extends Component
             'seesAll' => Gate::allows('crm.leads.all'),
             'summary' => ['calls' => (clone $query)->where('type', CallType::Call->value)->count(), 'visits' => (clone $query)->where('type', CallType::Visit->value)->count(),
                 'leads' => (clone $query)->reorder()->distinct()->count('lead_calls.lead_id')],
-            'calls' => $query->paginate(25),
+            'calls' => $query->paginate(Configuration::get('general.rows_per_page')),
             'services' => Crm::serviceOptions($companyIds),
             'leadStatuses' => Crm::statusOptions($companyIds, CrmStatusType::Lead),
             'callStatuses' => Crm::statusOptions($companyIds, CrmStatusType::Call),

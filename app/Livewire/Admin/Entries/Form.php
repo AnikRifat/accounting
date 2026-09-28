@@ -14,7 +14,9 @@ use App\Models\User;
 use App\Services\LedgerService;
 use App\Services\MediaService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Money;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -118,6 +120,7 @@ class Form extends Component
         abort_unless($company?->is_active, 404);
         $this->companyId = $company->id;
         $this->entryDate = today()->toDateString();
+        $this->dueDate = $this->defaultDueDate();
         $this->payments = [['account' => $this->defaultPaymentMethod(), 'amount' => '']];
         $this->paidBy = (string) auth()->id();
     }
@@ -294,7 +297,8 @@ class Form extends Component
         $message = __('Entry :number saved.', ['number' => $saved->number]);
         if ($addAnother && ! $entry) {
             $this->payments = [['account' => $this->payments[0]['account'] ?? $this->defaultPaymentMethod(), 'amount' => '']];
-            $this->reset('amount', 'partyId', 'dueDate', 'reference', 'referenceFile', 'description', 'debitAccountId', 'creditAccountId');
+            $this->reset('amount', 'partyId', 'reference', 'referenceFile', 'description', 'debitAccountId', 'creditAccountId');
+            $this->dueDate = $this->defaultDueDate();
             $this->paidFollowsTotal = true;
             session()->now('success', $message);
             $this->js('document.getElementById('.json_encode($type->isBill() ? 'categoryAccountId' : 'creditAccountId').')?.focus()');
@@ -492,6 +496,14 @@ class Form extends Component
     }
 
     /** The company's first active Cash payment method, else its first active payment method. */
+    /** The due date Settings fills in for the unpaid part of a new entry (days after the entry date), or empty. */
+    private function defaultDueDate(): string
+    {
+        $days = Configuration::get('accounting.default_due_days');
+
+        return $days === null || $this->entryDate === '' ? '' : CarbonImmutable::parse($this->entryDate)->addDays($days)->toDateString();
+    }
+
     private function defaultPaymentMethod(): string
     {
         if ($this->companyId === null || ! auth()->user()->canAccessCompany($this->companyId)) {

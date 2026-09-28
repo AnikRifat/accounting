@@ -83,6 +83,7 @@ class ModuleSwitchTest extends TestCase
         $customer = Party::factory()->for($company)->create();
         $invoice = $this->issued($company, DocumentType::Invoice, $customer, [['Design work', 1, 50_000]]);
         $url = app(DocumentService::class)->share($invoice, null, $this->owner);
+        $this->travelTo(now()->setTime(6, 0));
         $this->get($url)->assertOk();
         $this->assertTrue($this->recurringInvoiceJob()->filtersPass($this->app));
 

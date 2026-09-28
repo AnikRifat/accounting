@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Crm\Services;
 use App\Livewire\Concerns\WithFormSheet;
 use App\Models\CrmService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
@@ -45,7 +46,7 @@ class Index extends Component
             'showCompany' => app(CompanyContext::class)->isAll(),
             'services' => CrmService::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with('company:id,name')->withCount('leads')
                 ->when($search !== '', fn ($query) => $query->where('name', 'like', '%'.$search.'%'))
-                ->orderBy('name')->paginate(20),
+                ->orderBy('name')->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');
     }
 

@@ -4,6 +4,7 @@ namespace App\Livewire\Admin\Media;
 
 use App\Models\Media;
 use App\Services\MediaService;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
@@ -38,6 +39,6 @@ class Index extends Component
     {
         Gate::authorize('media.view');
 
-        return view('livewire.admin.media.index', ['items' => Media::visibleTo(auth()->user())->latest('id')->paginate(15), 'service' => app(MediaService::class)])->layout('layouts.admin');
+        return view('livewire.admin.media.index', ['items' => Media::visibleTo(auth()->user())->latest('id')->paginate(Configuration::get('general.rows_per_page')), 'service' => app(MediaService::class)])->layout('layouts.admin');
     }
 }

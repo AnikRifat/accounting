@@ -7,6 +7,7 @@ use App\Livewire\Concerns\WithTableTools;
 use App\Models\Party;
 use App\Models\PartyCategory;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,7 +43,7 @@ class Index extends Component
 
         return view('livewire.admin.parties.index', [
             'showCompany' => app(CompanyContext::class)->isAll(),
-            'parties' => $this->tableQuery()->paginate(15),
+            'parties' => $this->tableQuery()->paginate(Configuration::get('general.rows_per_page')),
             'categories' => PartyCategory::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->orderByDesc('is_system')->orderBy('name')
                 ->pluck('name')->unique()->mapWithKeys(fn (string $name): array => [$name => $name])->all(),
         ])->layout('layouts.admin');

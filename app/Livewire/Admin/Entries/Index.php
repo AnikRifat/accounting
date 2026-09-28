@@ -13,6 +13,7 @@ use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -136,7 +137,7 @@ class Index extends Component
             ->toBase()->groupBy('type')->selectRaw('type, SUM(amount) as total')->pluck('total', 'type');
 
         return view('livewire.admin.entries.index', [
-            'entries' => $this->tableQuery()->paginate(25),
+            'entries' => $this->tableQuery()->paginate(Configuration::get('general.rows_per_page')),
             'income' => (int) ($totals[EntryType::Income->value] ?? 0),
             'expense' => (int) ($totals[EntryType::Expense->value] ?? 0),
             'types' => ['' => __('All types')] + collect(EntryType::cases())->mapWithKeys(fn (EntryType $type): array => [$type->value => $type->label()])->all(),

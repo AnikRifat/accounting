@@ -9,6 +9,7 @@ use App\Models\Document;
 use App\Models\Party;
 use App\Models\RecurringInvoice;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -95,7 +96,7 @@ class Index extends Component
         return view('livewire.admin.sales.documents.index', [
             'documentType' => $type,
             'documents' => (clone $query)->withBalance()->with(['party:id,name', 'company:id,name,code'])
-                ->orderByDesc('documents.issue_date')->orderByDesc('documents.id')->paginate(25),
+                ->orderByDesc('documents.issue_date')->orderByDesc('documents.id')->paginate(Configuration::get('general.rows_per_page')),
             'totals' => $totals,
             'statuses' => $statuses,
             'parties' => ['' => __('All parties')] + Party::query()->whereIn('company_id', $context->companyIds())->orderBy('name')

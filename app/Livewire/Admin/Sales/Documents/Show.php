@@ -13,6 +13,7 @@ use App\Models\JournalEntry;
 use App\Models\User;
 use App\Services\DocumentMailer;
 use App\Services\DocumentService;
+use App\Support\Configuration;
 use App\Support\Money;
 use App\Support\WhatsApp;
 use Closure;
@@ -72,6 +73,7 @@ class Show extends Component
         Gate::authorize('sales.view');
         abort_unless(Document::query()->visibleTo(auth()->user())->whereKey($document->id)->exists(), 404);
         $this->documentId = $document->id;
+        $this->shareDays = Configuration::get('sales.share_days');
     }
 
     public function issue(): void

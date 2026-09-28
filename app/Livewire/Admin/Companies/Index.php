@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Companies;
 use App\Livewire\Concerns\WithFormSheet;
 use App\Livewire\Concerns\WithTableTools;
 use App\Models\Company;
+use App\Support\Configuration;
 use App\Support\TableExport;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,7 +29,7 @@ class Index extends Component
         Gate::authorize('companies.view');
 
         return view('livewire.admin.companies.index', [
-            'companies' => $this->tableQuery()->paginate(15),
+            'companies' => $this->tableQuery()->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');
     }
 

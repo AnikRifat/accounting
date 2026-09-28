@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Sales\Items;
 use App\Livewire\Concerns\WithFormSheet;
 use App\Models\Item;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Url;
@@ -56,7 +57,7 @@ class Index extends Component
             'items' => Item::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company:id,name', 'account:id,name'])
                 ->when($search !== '', fn ($query) => $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')->orWhere('description', 'like', '%'.$search.'%')))
                 ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))
-                ->orderBy('name')->orderBy('id')->paginate(20),
+                ->orderBy('name')->orderBy('id')->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');
     }
 

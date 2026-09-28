@@ -1,6 +1,6 @@
 @props(['columns', 'id' => 'table-export', 'csv' => null])
-{{-- Export & print options for a list using App\Livewire\Concerns\WithTableTools: format, which rows, which columns, orientation. --}}
-<div x-data="tableExport(@js(array_map('strval', array_keys($columns))))" x-on:open-table-export.window="show($event.detail?.scope ?? 'all')">
+{{-- Export & print options for a list using App\Livewire\Concerns\WithTableTools: format, which rows, which columns, orientation. Format and orientation start at Settings. --}}
+<div x-data="tableExport(@js(array_map('strval', array_keys($columns))), @js(['format' => \App\Support\Configuration::get('general.export_format'), 'orientation' => \App\Support\Configuration::get('general.print_orientation')]))" x-on:open-table-export.window="show($event.detail?.scope ?? 'all')">
     <x-button variant="secondary" size="sm" icon="download" x-on:click="show('all')" aria-haspopup="dialog" :aria-controls="$id">{{ __('Export') }}</x-button>
     <x-drawer :id="$id" x-model="visible" :title="__('Export & print')" :description="__('Choose the format, the rows and the columns.')">
         <fieldset class="stack-sm"><legend>{{ __('Format') }}</legend>

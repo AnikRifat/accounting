@@ -336,14 +336,15 @@ document.addEventListener('alpine:init', () => {
 
 document.addEventListener('alpine:init', () => {
     // Export & print options behind x-table.export; the work happens in WithTableTools::exportTable().
-    window.Alpine.data('tableExport', (keys) => ({
+    // `defaults` holds the format and orientation chosen in Settings.
+    window.Alpine.data('tableExport', (keys, defaults = {}) => ({
         keys,
         picked: [...keys],
         visible: false,
         busy: false,
-        format: 'xlsx',
+        format: defaults.format ?? 'xlsx',
         scope: 'all',
-        orientation: 'portrait',
+        orientation: defaults.orientation ?? 'portrait',
 
         show(scope) {
             this.scope = scope === 'selected' && this.$wire.selected.length ? 'selected' : 'all';

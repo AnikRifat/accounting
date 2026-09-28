@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\PartyCategories;
 use App\Livewire\Concerns\WithFormSheet;
 use App\Models\PartyCategory;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
@@ -40,7 +41,7 @@ class Index extends Component
             'showCompany' => app(CompanyContext::class)->isAll(),
             'categories' => PartyCategory::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with('company:id,name')->withCount('parties')
                 ->when($search !== '', fn ($query) => $query->where('name', 'like', '%'.$search.'%'))
-                ->orderByDesc('is_system')->orderBy('name')->paginate(20),
+                ->orderByDesc('is_system')->orderBy('name')->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');
     }
 

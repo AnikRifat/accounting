@@ -12,6 +12,7 @@ use App\Models\JournalLine;
 use App\Models\User;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use App\Support\Permissions;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
@@ -27,8 +28,13 @@ use Livewire\Component;
  */
 class Dashboard extends Component
 {
-    /** Number of months shown in the trend chart (6 or 12). */
+    /** Number of months shown in the trend chart (6 or 12), starting at the one chosen in Settings. */
     public int $trendMonths = 6;
+
+    public function mount(): void
+    {
+        $this->trendMonths = Configuration::get('accounting.dashboard_months');
+    }
 
     public function setTrendMonths(int $months): void
     {

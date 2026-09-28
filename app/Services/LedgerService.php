@@ -15,6 +15,7 @@ use App\Models\JournalLine;
 use App\Models\Media;
 use App\Models\Party;
 use App\Models\User;
+use App\Support\Configuration;
 use App\Support\Money;
 use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -699,6 +700,9 @@ class LedgerService
             $errors['party_id'] = $sales ? __('Choose the customer.') : __('Choose the supplier.');
         }
         $date = $document->issue_date->toDateString();
+        if ($date > today()->toDateString() && ! Configuration::get('accounting.allow_future_dates')) {
+            $errors['issue_date'] = __('Future-dated transactions are turned off in Settings.');
+        }
         if ($bill !== null) {
             $available = $this->outstanding($bill) + ($entry->exists ? (int) $entry->getOriginal('amount') : 0);
             if ($total > $available) {
@@ -868,11 +872,12 @@ class LedgerService
     private function validate(array $data, array $rules): array
     {
         return Validator::make($data, $rules + [
-            'entry_date' => ['required', 'date_format:Y-m-d'],
+            'entry_date' => ['required', 'date_format:Y-m-d', ...Configuration::get('accounting.allow_future_dates') ? [] : ['before_or_equal:today']],
             'description' => ['nullable', 'string', 'max:500'],
             'reference' => ['nullable', 'string', 'max:100'],
         ], [
             'amount.min' => __('The amount must be greater than zero.'),
+            'entry_date.before_or_equal' => __('Future-dated transactions are turned off in Settings.'),
             'payments.*.amount.min' => __('The amount must be greater than zero.'),
             'payments.*.account_id.distinct' => __('Choose each payment method once.'),
             'credit_account_id.different' => __('Choose two different accounts.'),

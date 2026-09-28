@@ -16,7 +16,7 @@ class SettingsTest extends TestCase
     public function test_saved_public_settings_are_exposed_and_registration_switch_is_enforced(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'owner']));
-        Livewire::test(Settings::class)->set('appName', 'My Application')->set('supportEmail', 'help@example.test')->set('registrationEnabled', false)->call('save')->assertHasNoErrors();
+        Livewire::test(Settings::class)->set('values.app_name', 'My Application')->set('values.support_email', 'help@example.test')->set('values.registration_enabled', false)->call('save')->assertHasNoErrors();
         auth()->logout();
         $this->getJson('/api/v1/configuration')->assertOk()->assertJsonPath('data.app_name', 'My Application')->assertJsonPath('data.registration_enabled', false);
         $this->postJson('/api/v1/auth/register', ['name' => 'Member', 'email' => 'member@example.test', 'password' => 'StrongPass12345', 'password_confirmation' => 'StrongPass12345'])->assertForbidden();

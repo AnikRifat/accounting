@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 /**
  * The application modules (Accounting, Sales, CRM, Organisation) switched from the header. A page belongs to a module by
  * its route name; the few shared pages (profile, company chooser, print) keep the module the user was last in.
- * config/modules.php switches whole modules off for an install.
+ * config/modules.php makes a module available to an install; Settings switches the available ones on and off.
  */
 final class Modules
 {
@@ -41,14 +41,22 @@ final class Modules
         };
     }
 
-    /** Whether this install runs the module (config/modules.php). Organisation is always on; Sales needs Accounting. */
+    /**
+     * Whether the module runs: available in this install (config/modules.php) and switched on in Settings.
+     * Organisation is always on; Sales needs Accounting.
+     */
     public static function enabled(string $module): bool
     {
         return match ($module) {
             self::ORGANISATION => true,
-            self::SALES => (bool) config('modules.sales') && (bool) config('modules.accounting'),
-            default => (bool) config('modules.'.$module),
+            self::SALES => self::switchedOn(self::SALES) && self::switchedOn(self::ACCOUNTING),
+            default => self::switchedOn($module),
         };
+    }
+
+    private static function switchedOn(string $module): bool
+    {
+        return (bool) config('modules.'.$module) && Configuration::get('modules.'.$module);
     }
 
     /**

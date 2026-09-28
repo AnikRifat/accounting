@@ -6,6 +6,7 @@ use App\Livewire\Concerns\WithFormSheet;
 use App\Models\RecurringInvoice;
 use App\Services\RecurringInvoices;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
@@ -49,7 +50,7 @@ class Index extends Component
             'showCompany' => app(CompanyContext::class)->isAll(),
             'schedules' => RecurringInvoice::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())
                 ->with(['company:id,name', 'source:id,number,party_id', 'source.party:id,name'])->withCount('documents')
-                ->orderByDesc('is_active')->orderBy('next_run_on')->orderBy('name')->paginate(20),
+                ->orderByDesc('is_active')->orderBy('next_run_on')->orderBy('name')->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');
     }
 

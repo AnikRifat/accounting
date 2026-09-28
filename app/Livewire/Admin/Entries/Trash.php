@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Entries;
 use App\Models\JournalEntry;
 use App\Services\LedgerService;
 use App\Support\CompanyContext;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
@@ -64,7 +65,7 @@ class Trash extends Component
 
         return view('livewire.admin.entries.trash', [
             'entries' => $this->trashed()->with(['company:id,name,code', 'party:id,name', 'deleter:id,name'])
-                ->orderByDesc('deleted_at')->orderByDesc('id')->paginate(25),
+                ->orderByDesc('deleted_at')->orderByDesc('id')->paginate(Configuration::get('general.rows_per_page')),
             'showCompany' => app(CompanyContext::class)->isAll(),
         ])->layout('layouts.admin');
     }

@@ -7,6 +7,7 @@ use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\LeadCall;
 use App\Services\CallLogger;
+use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
@@ -63,6 +64,9 @@ class Form extends Component
             $this->leadId = $lead->id;
             $this->leadStatusId = (string) $lead->crm_status_id;
             [$this->calledOn, $this->calledTime] = [today()->toDateString(), now()->format('H:i')];
+            if (($followUpDays = Configuration::get('crm.follow_up_days')) !== null) {
+                $this->nextCallOn = today()->addDays($followUpDays)->toDateString();
+            }
         }
         $this->returnTo = $returnTo !== null && str_starts_with($returnTo, url('/admin')) ? $returnTo : route('admin.crm.leads.show', $this->leadId);
     }

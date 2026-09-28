@@ -2,12 +2,14 @@
 
 namespace App\Livewire\Admin\Reports\Concerns;
 
+use App\Support\Configuration;
 use Carbon\CarbonImmutable;
 use Livewire\Attributes\Url;
 
 /**
  * Period presets for reports, All time by default. Presets fill `from`/`to` on every render (All time leaves them empty);
- * editing a date switches to `custom`, where an empty date leaves that end open. The Bangladesh fiscal year runs 1 July – 30 June.
+ * editing a date switches to `custom`, where an empty date leaves that end open. Without a period in the URL a report opens on
+ * the period chosen in Settings; the fiscal year starts in the month chosen there (July, Bangladesh, by default).
  */
 trait HasPeriod
 {
@@ -25,6 +27,14 @@ trait HasPeriod
     #[Url(except: '')]
     public string $to = '';
 
+    /** Livewire trait hook: a report opened without a period starts on the one chosen in Settings. */
+    public function mountHasPeriod(): void
+    {
+        if (! request()->has('period')) {
+            $this->period = Configuration::get('accounting.report_period');
+        }
+    }
+
     public function updatedFrom(): void
     {
         $this->period = 'custom';
@@ -38,7 +48,8 @@ trait HasPeriod
     /** @return array{0: string, 1: string}|null Y-m-d bounds (inclusive) for a preset, or null for custom or unknown values */
     public static function presetRange(string $preset, CarbonImmutable $today): ?array
     {
-        $fiscalStart = $today->month >= 7 ? $today->setDate($today->year, 7, 1) : $today->setDate($today->year - 1, 7, 1);
+        $startMonth = Configuration::get('accounting.fiscal_year_start');
+        $fiscalStart = $today->setDate($today->month >= $startMonth ? $today->year : $today->year - 1, $startMonth, 1);
         if ($preset === 'all_time') {
             return [self::EARLIEST_DATE, self::LATEST_DATE];
         }
