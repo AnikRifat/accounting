@@ -52,6 +52,15 @@ session timezone `+06:00`.
   has no parties. Salary is shown only to users with `users.update`.
 - **UI text** is English and every user-facing string goes through `__()` with the English text
   as key, so `lang/bn.json` can be added later without code changes.
+- **Modules** (`App\Support\Modules`): Accounting and CRM, switched in the header. A page belongs to a
+  module by route name (`admin.crm.*` is CRM); shared pages (companies, employees, roles, settings)
+  keep the last module (`RememberModule` middleware). A CRM-only user landing on `/admin` goes to
+  the CRM dashboard.
+- **CRM** follows the same company rules. Leads, calls, services and statuses are per company. Lead
+  visibility goes through `Lead::visibleTo()` / `LeadCall::visibleTo()`: without `crm.leads.all` a
+  user sees only leads assigned to them. Calls are written only through `App\Services\CallLogger`:
+  the latest call (by call time) sets the lead's status and next call date, and a closed status
+  clears it. Phones pass `Crm::normalizePhone()` and are unique per company.
 - Public API self-registration is off by default (`config/settings.php`). The starter's `/api/v1`
   and media code are kept for the future ERP and are unused by the accounting UI.
 

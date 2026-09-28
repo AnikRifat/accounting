@@ -2,6 +2,8 @@
 
 use App\Http\Middleware\EnsureCompanySelected;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\RedirectToModuleHome;
+use App\Http\Middleware\RememberModule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,7 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->alias(['active' => EnsureUserIsActive::class, 'company.selected' => EnsureCompanySelected::class]);
+        $middleware->alias(['active' => EnsureUserIsActive::class, 'company.selected' => EnsureCompanySelected::class,
+            'module' => RememberModule::class, 'module.home' => RedirectToModuleHome::class]);
         $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {

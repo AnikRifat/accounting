@@ -346,6 +346,42 @@ Rules for every module:
    switcher. Isolation tests must prove that a crafted session value for an invisible company falls
    back to All-visible, and that crafted Livewire properties can't pick a company.
 
+## Increment 12 contract: CRM module (Anik, 2026-09-28)
+
+Request: a module switcher at the top right of the header ("Accounting | CRM"), with a CRM built on the
+same company concept. The screens Anik supplied were the reference: CRM dashboard, CR dashboard, leads,
+call log, services, statuses, user management and reports.
+
+Decisions (coordinator, reversible):
+- **Modules.** `App\Support\Modules` + `RememberModule` middleware. The sidebar shows the current
+  module's sections. Companies, Employees, Roles, Media and Settings are shared. The switcher shows only
+  the modules a user can open: Accounting needs `dashboard.view`, CRM needs `crm.view`.
+- **Company rules are unchanged.** Header scope, `company.selected` on create routes, `#[Locked]` company
+  ids re-checked on save, a Company column in All mode. Inactive companies accept no new leads or calls.
+- **Schema.** `crm_services` (unique name per company), `crm_statuses` (type `lead|call`, tone,
+  `is_closed`, position; the defaults come from `Crm::DEFAULT_STATUSES` for every company, including
+  existing ones through the migration), `leads` (phone normalised, unique per company; next_call_on
+  date), and `lead_calls` (type `call|visit`, called_at, call result, lead status after the call,
+  next call). Services and statuses cascade with their company. Leads and calls are deleted explicitly
+  by `RecordDeletion::deleteCompany`.
+- **Follow-ups are derived** from `leads.next_call_on`: today, overdue or upcoming, and never for a closed
+  status. `CallLogger` applies only the latest call to the lead. A back-dated call changes nothing.
+- **Access.** Permissions `crm.view`, `crm.leads.all|create|update|delete|import`,
+  `crm.calls.create|update|delete`, `crm.setup.manage`, `crm.reports.view`. New system roles:
+  `sales` (own leads, log and edit own calls) and `sales-manager` (`crm.*` + `users.view`). Without
+  `crm.leads.all`, a user sees and edits only the leads assigned to them and their own calls, and
+  can't reassign leads.
+- **Employees.** An employee who logged calls can only be deactivated, never deleted. Deleting
+  unassigns their leads.
+- **Reports.** The Leads and Call log lists are the lead and call reports (filters plus Excel export
+  and print). Team performance shows, per person, leads by current status, overdue follow-ups, and
+  calls and visits.
+- **Import.** CSV/XLSX through OpenSpout (already a dependency), up to 5,000 rows. Only Phone is
+  required. Duplicates and invalid phones are skipped and reported.
+
+Not included: a lead→party conversion into accounting, SMS/WhatsApp, a lead card view, bulk
+reassignment, and the global header search from the reference screens.
+
 ## Increments
 
 | # | Increment | Owner | Status |
@@ -374,6 +410,7 @@ Rules for every module:
 | 8 | Employees become users (staff fields on `users`, one party per assigned company via `User::syncParties()`, single super admin via `Gate::before`, editable system roles) | session frish-5f | done (commit 20607fc); 177/178 green; the 1 failure is DemoSeederTest asserting the owner password is not 'password', which conflicts with Anik's local edit setting the demo password to 'password' |
 | 9 | Transactions list: "Paid / received by" (Anik) | coordinator (backend) + frish-79 (view, filter drawer) | backend done: `payer` #[Url] filter, `$payers` options (only users who handled money in scope), `payer` eager-load, CSV column and `?payer=`; receipts/payments now record `paid_by` (same payerId() rule); PayerFilterTest; 182/182. Filters move to an off-canvas drawer in frish-79's phase-2 table pattern. |
 | 10 | Deleting (Anik): transaction Trash (soft delete, restore, purge) + delete dialog for categories, payment methods, chart accounts, parties, companies with transfer-or-hard-delete | agents `ledger` (10A), `org` (10B), coordinator (buttons, purge file cleanup after commit) | done: 211/211, Pint clean, build OK. Every figure proven to ignore trashed entries; nextNumber reads trashed rows (no number reuse on trash); purge deletes attachments only after the outermost commit. Known limits: a purged newest entry's number can be reissued; Empty trash purges entry by entry. Local DBs need `php artisan migrate` (new migration 2026_09_24_190000). |
+| 12 | CRM module + header module switcher (Anik) | coordinator | done: 30 new tests (258 total green), Pint clean, build OK; HTTP smoke on a demo SQLite copy, 143 requests across owner, sales manager, sales rep and accountant, in All and each company mode, no errors. Local DBs need `php artisan migrate`. |
 | 6 | Final review, behavior verification, handover | coordinator + agent `verify-final` | done: PASS on snapshot of 4d6396f + fixes. README fresh setup OK (after D1 fix: `composer setup` now creates the SQLite file); `composer check` 181/181; 10-step customer journey (2,755 assertions) incl. drawer companies, partial payment → overdue → settle → paid, void rules, reports vs hand-computed figures, isolation (13 pages, CSV, crafted ids/session/Livewire), roles; ledger invariants after journey and demo seed; HTTP smoke 110 requests in All and single-company mode, no errors. Not covered: browser/JS behaviour, concurrency on MySQL, file uploads, cPanel deploy. Later work by parallel sessions (UI phase 2) is outside this verification. |
 
 ## Acceptance criteria

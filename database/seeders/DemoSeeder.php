@@ -7,9 +7,13 @@ use App\Enums\EntryType;
 use App\Enums\PaymentType;
 use App\Models\Account;
 use App\Models\Company;
+use App\Models\CrmService;
+use App\Models\CrmStatus;
 use App\Models\JournalEntry;
+use App\Models\Lead;
 use App\Models\Party;
 use App\Models\User;
+use App\Services\CallLogger;
 use App\Services\LedgerService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
@@ -33,6 +37,16 @@ class DemoSeeder extends Seeder
     public const ACCOUNTANT_EMAIL = 'accountant@frish.test';
 
     public const DATA_ENTRY_EMAIL = 'dataentry@frish.test';
+
+    public const SALES_MANAGER_EMAIL = 'salesmanager@frish.test';
+
+    public const SALES_EMAIL = 'sales@frish.test';
+
+    /** CRM demo: services per company code, and lead names to draw from. */
+    private const CRM_SERVICES = ['PAS' => ['Knitwear sourcing', 'Woven sourcing', 'Quality inspection'], 'JSL' => ['ERP software', 'Website development', 'Mobile app']];
+
+    private const LEAD_NAMES = ['Arif Hossain', 'Sabina Yasmin', 'Kamrul Hasan', 'Tahmina Akter', 'Jubayer Ahmed', 'Shirin Sultana', 'Masud Rana',
+        'Nazmul Huda', 'Farzana Rahman', 'Rakib Hasan', 'Mahmuda Khatun', 'Shakil Ahmed', 'Rokeya Begum', 'Towhid Islam', 'Lipi Akter'];
 
     /** Months of history, including the current month up to today. */
     private const MONTHS = 6;
@@ -126,6 +140,8 @@ class DemoSeeder extends Seeder
         $this->command?->line('  Owner       '.self::OWNER_EMAIL);
         $this->command?->line('  Accountant  '.self::ACCOUNTANT_EMAIL.' (Meghna Traders Ltd., Jamuna Soft Ltd.)');
         $this->command?->line('  Data entry  '.self::DATA_ENTRY_EMAIL.' (Shapla Kitchen & Restaurant)');
+        $this->command?->line('  Sales mgr   '.self::SALES_MANAGER_EMAIL.' (CRM: Padma Apparel Sourcing, Jamuna Soft Ltd.)');
+        $this->command?->line('  Sales       '.self::SALES_EMAIL.' (CRM: Padma Apparel Sourcing, own leads only)');
         $this->command?->line('  Password    '.$password);
     }
 
@@ -143,6 +159,10 @@ class DemoSeeder extends Seeder
 
         $this->user('Rafia Chowdhury', self::ACCOUNTANT_EMAIL, 'accountant', $password, [$companies['MTL']->id, $companies['JSL']->id]);
         $this->user('Habib Rahman', self::DATA_ENTRY_EMAIL, 'data-entry', $password, [$companies['SKR']->id]);
+        $salesManager = $this->user('Mim Chowdhury', self::SALES_MANAGER_EMAIL, 'sales-manager', $password, [$companies['PAS']->id, $companies['JSL']->id]);
+        $sales = $this->user('Santa Akter', self::SALES_EMAIL, 'sales', $password, [$companies['PAS']->id]);
+        $this->crm($companies['PAS'], [$salesManager, $sales]);
+        $this->crm($companies['JSL'], [$salesManager]);
 
         $ids = array_map(fn (Company $company): int => $company->id, $companies);
         $today = $this->today->toDateString();
@@ -167,6 +187,43 @@ class DemoSeeder extends Seeder
         $user->syncParties();
 
         return $user;
+    }
+
+    /**
+     * About 30 leads with services, statuses, follow-ups (some overdue, some today) and a call history logged
+     * through CallLogger, so each lead's status and next call match its latest call.
+     *
+     * @param  list<User>  $people  who the leads are assigned to and who calls them
+     */
+    private function crm(Company $company, array $people): void
+    {
+        $random = new Randomizer(new Mt19937(crc32('crm-'.$company->code)));
+        $pick = fn (array $items): mixed => $items[$random->getInt(0, count($items) - 1)];
+        $services = array_map(fn (string $name): int => CrmService::create(['company_id' => $company->id, 'name' => $name])->id, self::CRM_SERVICES[$company->code]);
+        $statuses = CrmStatus::query()->where('company_id', $company->id)->get();
+        $leadStatuses = $statuses->where('type.value', 'lead')->values();
+        $callStatuses = $statuses->where('type.value', 'call')->pluck('id')->all();
+        $logger = app(CallLogger::class);
+        for ($number = 0; $number < 30; $number++) {
+            $created = $this->today->subDays($random->getInt(0, 40));
+            $lead = Lead::create(['company_id' => $company->id, 'name' => $random->getInt(0, 5) === 0 ? null : $pick(self::LEAD_NAMES),
+                'phone' => sprintf('01%d%08d', $random->getInt(3, 9), $number * 7919 + $random->getInt(0, 999)), 'crm_service_id' => $pick($services),
+                'crm_status_id' => $leadStatuses->first()->id, 'assigned_to' => $pick($people)->id, 'created_by' => $this->owner->id,
+                'source' => $pick(['Facebook', 'Referral', 'Website', 'Walk-in', null]), 'next_call_on' => $created->addDays($random->getInt(0, 3))->toDateString()]);
+            $lead->forceFill(['created_at' => $created, 'updated_at' => $created])->save();
+            $calledAt = $created;
+            for ($calls = $random->getInt(0, 3); $calls > 0; $calls--) {
+                $calledAt = $calledAt->addDays($random->getInt(1, 6))->setTime($random->getInt(10, 18), $random->getInt(0, 59));
+                if ($calledAt->isAfter(now())) {
+                    break;
+                }
+                $status = $pick($leadStatuses->slice(1)->values()->all());
+                $logger->record($lead, ['type' => $random->getInt(0, 6) === 0 ? 'visit' : 'call', 'called_at' => $calledAt->toDateTimeString(),
+                    'call_status_id' => $pick($callStatuses), 'lead_status_id' => $status->id,
+                    'summary' => $pick(['Asked for a price list', 'Demo sent, will decide next week', 'No response, try again', 'Busy, call back later', 'Wants a meeting at the office']),
+                    'next_call_on' => $this->today->addDays($random->getInt(-6, 12))->toDateString()], $lead->assignee);
+            }
+        }
     }
 
     /** @param array<string, mixed> $definition one row of self::COMPANIES */

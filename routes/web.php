@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\EntryExportController;
+use App\Http\Controllers\Admin\LeadImportTemplateController;
 use App\Http\Controllers\Admin\PrintTableController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Livewire\Admin\Accounts\Form as AccountForm;
@@ -10,6 +11,18 @@ use App\Livewire\Admin\Categories\Index as CategoryIndex;
 use App\Livewire\Admin\ChooseCompany;
 use App\Livewire\Admin\Companies\Form as CompanyForm;
 use App\Livewire\Admin\Companies\Index as CompanyIndex;
+use App\Livewire\Admin\Crm\Calls\Form as CallForm;
+use App\Livewire\Admin\Crm\Calls\Index as CallIndex;
+use App\Livewire\Admin\Crm\Dashboard as CrmDashboard;
+use App\Livewire\Admin\Crm\Insights as CrmInsights;
+use App\Livewire\Admin\Crm\Leads\Form as LeadForm;
+use App\Livewire\Admin\Crm\Leads\Index as LeadIndex;
+use App\Livewire\Admin\Crm\Leads\Show as LeadShow;
+use App\Livewire\Admin\Crm\Reports\Performance as CrmPerformance;
+use App\Livewire\Admin\Crm\Services\Form as CrmServiceForm;
+use App\Livewire\Admin\Crm\Services\Index as CrmServiceIndex;
+use App\Livewire\Admin\Crm\Statuses\Form as CrmStatusForm;
+use App\Livewire\Admin\Crm\Statuses\Index as CrmStatusIndex;
 use App\Livewire\Admin\Dashboard;
 use App\Livewire\Admin\Entries\Form as EntryForm;
 use App\Livewire\Admin\Entries\Index as EntryIndex;
@@ -49,8 +62,8 @@ Route::post('/admin/logout', function (Request $request) {
     return redirect()->route('login');
 })->middleware('auth')->name('logout');
 
-Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access'])->group(function (): void {
-    Route::livewire('/', Dashboard::class)->middleware('can:dashboard.view')->name('dashboard');
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin.access', 'module'])->group(function (): void {
+    Route::livewire('/', Dashboard::class)->middleware(['module.home', 'can:dashboard.view'])->name('dashboard');
     Route::livewire('/choose-company', ChooseCompany::class)->name('choose-company');
     Route::livewire('/profile', Profile::class)->name('profile');
     Route::get('/print/{token}', PrintTableController::class)->where('token', '[A-Za-z0-9]{40}')->name('print');
@@ -93,4 +106,23 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
     Route::livewire('/payment-methods/{paymentMethod}/edit', PaymentMethodForm::class)->middleware('can:accounts.manage')->name('payment-methods.edit');
     Route::livewire('/settings', Settings::class)->middleware('can:settings.view')->name('settings');
     Route::livewire('/media', MediaIndex::class)->middleware('can:media.view')->name('media');
+    Route::prefix('crm')->name('crm.')->middleware('can:crm.view')->group(function (): void {
+        Route::livewire('/', CrmDashboard::class)->name('dashboard');
+        Route::livewire('/insights', CrmInsights::class)->name('insights');
+        Route::livewire('/leads', LeadIndex::class)->name('leads.index');
+        Route::livewire('/leads/create', LeadForm::class)->middleware(['can:crm.leads.create', 'company.selected'])->name('leads.create');
+        Route::get('/leads/import-template', LeadImportTemplateController::class)->middleware('can:crm.leads.import')->name('leads.import-template');
+        Route::livewire('/leads/{lead}', LeadShow::class)->whereNumber('lead')->name('leads.show');
+        Route::livewire('/leads/{lead}/edit', LeadForm::class)->whereNumber('lead')->middleware('can:crm.leads.update')->name('leads.edit');
+        Route::livewire('/leads/{lead}/calls/create', CallForm::class)->whereNumber('lead')->middleware('can:crm.calls.create')->name('calls.create');
+        Route::livewire('/calls', CallIndex::class)->name('calls.index');
+        Route::livewire('/calls/{call}/edit', CallForm::class)->whereNumber('call')->middleware('can:crm.calls.update')->name('calls.edit');
+        Route::livewire('/services', CrmServiceIndex::class)->name('services.index');
+        Route::livewire('/services/create', CrmServiceForm::class)->middleware(['can:crm.setup.manage', 'company.selected'])->name('services.create');
+        Route::livewire('/services/{service}/edit', CrmServiceForm::class)->middleware('can:crm.setup.manage')->name('services.edit');
+        Route::livewire('/statuses', CrmStatusIndex::class)->name('statuses.index');
+        Route::livewire('/statuses/create', CrmStatusForm::class)->middleware(['can:crm.setup.manage', 'company.selected'])->name('statuses.create');
+        Route::livewire('/statuses/{status}/edit', CrmStatusForm::class)->middleware('can:crm.setup.manage')->name('statuses.edit');
+        Route::livewire('/reports/performance', CrmPerformance::class)->middleware('can:crm.reports.view')->name('reports.performance');
+    });
 });

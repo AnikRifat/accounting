@@ -63,6 +63,18 @@ class User extends Authenticatable
         return $this->hasMany(Party::class);
     }
 
+    /** CRM leads assigned to this employee. */
+    public function assignedLeads(): HasMany
+    {
+        return $this->hasMany(Lead::class, 'assigned_to');
+    }
+
+    /** CRM calls and visits this employee logged. */
+    public function leadCalls(): HasMany
+    {
+        return $this->hasMany(LeadCall::class);
+    }
+
     /**
      * Keeps one party per assigned company, with the user's name, phone and active status. Parties of
      * companies no longer assigned are deactivated, never deleted, because entries may point at them.

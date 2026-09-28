@@ -7,6 +7,8 @@ return [
         'accountant' => ['admin.access', 'dashboard.view', 'companies.view', 'accounts.*', 'entries.view', 'entries.create', 'entries.update', 'entries.void', 'entries.delete', 'reports.view', 'users.view', 'users.create', 'users.update', 'parties.*'],
         'data-entry' => ['admin.access', 'dashboard.view', 'companies.view', 'accounts.view', 'entries.view', 'entries.create', 'parties.view', 'parties.create'],
         'member' => ['media.view', 'media.upload', 'media.delete'],
+        'sales' => ['admin.access', 'companies.view', 'crm.view', 'crm.leads.create', 'crm.leads.update', 'crm.calls.create', 'crm.calls.update'],
+        'sales-manager' => ['admin.access', 'companies.view', 'crm.*', 'users.view'],
     ],
     'catalogue' => [
         'Administration' => ['admin.access', 'dashboard.view'],
@@ -18,5 +20,7 @@ return [
         'Roles' => ['roles.view', 'roles.create', 'roles.update', 'roles.delete', 'roles.assign', 'permissions.manage'],
         'Settings' => ['settings.view', 'settings.update'],
         'Media' => ['media.view', 'media.upload', 'media.delete', 'media.manage'],
+        'CRM' => ['crm.view', 'crm.leads.all', 'crm.leads.create', 'crm.leads.update', 'crm.leads.delete', 'crm.leads.import',
+            'crm.calls.create', 'crm.calls.update', 'crm.calls.delete', 'crm.setup.manage', 'crm.reports.view'],
     ],
 ];

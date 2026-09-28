@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\LedgerService;
+use App\Support\Crm;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,7 +29,10 @@ class Company extends Model
 
     protected static function booted(): void
     {
-        static::created(fn (Company $company) => app(LedgerService::class)->createDefaultAccounts($company));
+        static::created(function (Company $company): void {
+            app(LedgerService::class)->createDefaultAccounts($company);
+            Crm::createDefaults($company->id);
+        });
     }
 
     public function users(): BelongsToMany

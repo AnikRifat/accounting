@@ -5,7 +5,11 @@ namespace App\Services;
 use App\Livewire\Admin\Users\ManageableUsers;
 use App\Models\Account;
 use App\Models\Company;
+use App\Models\CrmService;
+use App\Models\CrmStatus;
 use App\Models\JournalEntry;
+use App\Models\Lead;
+use App\Models\LeadCall;
 use App\Models\Party;
 use App\Models\User;
 use App\Support\CompanyContext;
@@ -26,8 +30,8 @@ use LogicException;
  * LedgerService::purge). Trashed transactions count as used, so nothing is left pointing at a
  * deleted record. System accounts, employee parties and a company's last active payment method
  * are never deleted here. An employee is deleted only while no transaction names them (as author,
- * editor, voider, payer or through their parties), so the audit trail stays whole; otherwise they
- * are deactivated instead.
+ * editor, voider, payer or through their parties) and they logged no CRM call, so the audit trail
+ * stays whole; otherwise they are deactivated instead. Their assigned leads become unassigned.
  */
 class RecordDeletion
 {
@@ -50,6 +54,7 @@ class RecordDeletion
             $record instanceof Account && $this->isLastActivePaymentMethod($record) => __('A company needs at least one active payment method. Add or activate another one first.'),
             $record instanceof User && $record->isRoot() => __('The super admin cannot be deleted.'),
             $record instanceof User && $this->relatedEntries($record)->exists() => __('This employee appears in transactions, as the one who entered, edited, voided or paid them, or as their party. Deactivate the employee instead, so the history keeps their name.'),
+            $record instanceof User && LeadCall::query()->where('user_id', $record->id)->exists() => __('This employee has logged CRM calls. Deactivate the employee instead, so the call history keeps their name.'),
             default => null,
         };
     }
@@ -115,7 +120,7 @@ class RecordDeletion
 
     /**
      * Permanently deletes the record with every related transaction (and a bill's receipts or payments).
-     * A company also loses its parties, accounts and user assignments; `$confirmation` must be its code.
+     * A company also loses its parties, accounts, CRM data and user assignments; `$confirmation` must be its code.
      */
     public function hardDelete(Account|Party|Company $record, User $actor, ?string $confirmation = null): void
     {
@@ -145,6 +150,10 @@ class RecordDeletion
                 Gate::forUser($actor)->authorize('entries.purge');
             }
             $this->purgeEntries($entryIds, $actor);
+            LeadCall::query()->where('company_id', $company->id)->delete();
+            Lead::query()->where('company_id', $company->id)->delete();
+            CrmStatus::query()->where('company_id', $company->id)->delete();
+            CrmService::query()->where('company_id', $company->id)->delete();
             Party::query()->where('company_id', $company->id)->delete();
             Account::query()->where('company_id', $company->id)->delete();
             $company->users()->detach();

@@ -9,6 +9,7 @@ use App\Livewire\Admin\Reports\TrialBalance;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
+use App\Models\Lead;
 use App\Models\Party;
 use App\Models\User;
 use App\Services\LedgerService;
@@ -125,6 +126,19 @@ class DemoSeederTest extends TestCase
             $this->fail('DemoSeeder did not refuse.');
         } catch (RuntimeException $exception) {
             $this->assertStringContainsString($reason, $exception->getMessage());
+        }
+    }
+
+    public function test_demo_seeder_adds_crm_leads_whose_status_follows_their_latest_call(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $this->assertSame(60, Lead::count());
+        $this->assertSame(['sales-manager', 'sales'], [User::where('email', DemoSeeder::SALES_MANAGER_EMAIL)->value('role'), User::where('email', DemoSeeder::SALES_EMAIL)->value('role')]);
+        $called = Lead::query()->has('calls')->with('latestCall')->get();
+        $this->assertNotEmpty($called);
+        foreach ($called as $lead) {
+            $this->assertSame($lead->latestCall->lead_status_id, $lead->crm_status_id);
         }
     }
 }

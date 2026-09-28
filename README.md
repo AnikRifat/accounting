@@ -19,6 +19,7 @@ Engineering rules for contributors and agents: [AGENTS.md](AGENTS.md).
 | Categories and payment methods | Managed without account codes, which are assigned automatically. On All companies, the category list is combined and a new category is added to every company. Payment methods (Cash, Bank, bKash/Nagad, card) have opening balances. |
 | Reports | Income statement (accrual: dues count in full on the entry date), dues (who owes you and whom you owe, with overdue items), party statement, account ledger, trial balance, employee cost, and the chart of accounts. Bangladesh fiscal-year presets (1 July–30 June). Printable. |
 | Dashboard | This month versus last month, receivable/payable/overdue totals and the next dues, cash position per payment method, a six-month income/expense chart, recent transactions. |
+| CRM module | Switch between **Accounting** and **CRM** in the header (right side). Same company switcher and company isolation. Leads (phone is unique per company; Bangladeshi numbers are normalised), a call and visit log, and follow-ups from each lead's next call date: today, overdue and upcoming. Services and statuses per company; closed lead statuses end follow-ups. Dashboard queue, insights, team performance, CSV/Excel lead import, and export or print of the lead and call lists. Sales reps see only the leads assigned to them (`crm.leads.all` shows every lead). |
 | Employees and access | Employees are user accounts that sign in, with staff details (code, designation, department, phone, monthly salary, joining date). A user can belong to several companies and gets a party in each. One super admin (created with `php artisan app:create-admin`) can do everything. The other roles (administrator, accountant, data-entry, custom roles) have editable permissions and per-user denials. User managers can't take over accounts with more power than their own. |
 
 Not included yet: attendance, leave, payroll processing, inter-company transfers, multi-currency,
@@ -54,13 +55,15 @@ php artisan migrate:fresh --seed   # wipes the local database, then DatabaseSeed
 
 This creates 4 companies (Meghna Traders, Padma Apparel Sourcing, Jamuna Soft, Shapla Kitchen)
 with about 6 months of transactions: parties, partial payments, open and overdue dues, and later
-settlements. It also creates three sign-ins:
+settlements, plus 30 CRM leads with call histories in Padma and Jamuna. It also creates five sign-ins:
 
 - owner `superadmin@gmail.com`
 - accountant `accountant@frish.test` (Meghna, Jamuna)
 - data-entry user `dataentry@frish.test` (Shapla)
+- sales manager `salesmanager@frish.test` (CRM: Padma, Jamuna)
+- sales rep `sales@frish.test` (CRM: Padma, own leads only)
 
-All three sign in with the demo password `password`. The seeder only runs in the `local` or
+All five sign in with the demo password `password`. The seeder only runs in the `local` or
 `testing` environment and only on an empty database (no companies, no users). Otherwise it refuses
 with a non-zero exit, so it can never mix demo books into real ones.
 
