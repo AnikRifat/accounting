@@ -41,7 +41,7 @@ enum SystemAccount: string
         }
         [$code, $name, $type] = $this->definition();
         if ($id = (clone $accounts)->where('name', $name)->where('type', $type->value)->value('id')) {
-            DB::table('accounts')->whereKey($id)->update(['is_system' => true, 'system_key' => $this->value, 'is_active' => true]);
+            DB::table('accounts')->where('id', $id)->update(['is_system' => true, 'system_key' => $this->value, 'is_active' => true]);
 
             return (int) $id;
         }

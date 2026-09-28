@@ -45,6 +45,17 @@ class PartyCategoriesTest extends TestCase
         $this->assertSame(1, PartyCategory::query()->where('company_id', $company->id)->count());
     }
 
+    public function test_a_custom_category_named_employee_becomes_the_built_in_one(): void
+    {
+        $company = Company::factory()->create();
+        $category = $this->employeeCategory($company);
+        $category->forceFill(['is_system' => false, 'is_active' => false])->save();
+
+        $this->assertSame($category->id, PartyCategory::employeeCategoryId($company->id));
+        $this->assertTrue($category->fresh()->is_system);
+        $this->assertTrue($category->fresh()->is_active);
+    }
+
     public function test_the_built_in_category_cannot_be_edited_deleted_or_picked_for_a_custom_party(): void
     {
         $company = Company::factory()->create();

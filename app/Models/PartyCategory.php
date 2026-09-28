@@ -42,7 +42,7 @@ class PartyCategory extends Model
             return (int) DB::table('party_categories')->insertGetId(['company_id' => $companyId, 'name' => self::EMPLOYEE, 'is_active' => true,
                 'is_system' => true, 'created_at' => now(), 'updated_at' => now()]);
         }
-        DB::table('party_categories')->whereKey($id)->update(['is_system' => true, 'is_active' => true]);
+        DB::table('party_categories')->where('id', $id)->update(['is_system' => true, 'is_active' => true]);
 
         return (int) $id;
     }

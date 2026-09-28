@@ -6,6 +6,7 @@ use App\Enums\AccountType;
 use App\Enums\DueStatus;
 use App\Enums\EntryType;
 use App\Enums\PaymentType;
+use App\Enums\SystemAccount;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\JournalEntry;
@@ -89,6 +90,17 @@ class LedgerServiceTest extends TestCase
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey($field, $exception->errors());
         }
+    }
+
+    public function test_an_existing_account_named_vat_payable_is_adopted_as_the_system_one(): void
+    {
+        $company = Company::factory()->create();
+        $vat = Account::query()->where('company_id', $company->id)->where('system_key', SystemAccount::VatPayable)->sole();
+        $vat->forceFill(['is_system' => false, 'system_key' => null, 'is_active' => false])->save();
+
+        $this->assertSame($vat->id, SystemAccount::VatPayable->ensureFor($company->id));
+        $this->assertSame([true, SystemAccount::VatPayable, true], [$vat->fresh()->is_system, $vat->fresh()->system_key, $vat->fresh()->is_active]);
+        $this->assertSame(1, Account::query()->where('company_id', $company->id)->where('name', 'VAT Payable')->count());
     }
 
     public function test_every_new_company_gets_the_default_chart(): void

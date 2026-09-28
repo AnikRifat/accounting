@@ -18,6 +18,11 @@ ENV AUTORUN_ENABLED=true \
 
 WORKDIR /var/www/html
 
+# gd: mPDF (sales document PDFs) needs it and the base image does not ship it.
+USER root
+RUN install-php-extensions gd
+USER www-data
+
 COPY --chown=www-data:www-data composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --no-scripts --no-autoloader --prefer-dist --no-cache
 
