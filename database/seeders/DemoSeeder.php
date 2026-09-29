@@ -15,6 +15,7 @@ use App\Models\CrmStatus;
 use App\Models\Document;
 use App\Models\DocumentTemplate;
 use App\Models\Item;
+use App\Models\ItemCategory;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\Party;
@@ -199,11 +200,13 @@ class DemoSeeder extends Seeder
             'font' => 'sans', 'sections' => DocumentTemplate::defaultSections(), 'vat_number' => '000123456-0101',
             'bank_details' => "BRAC Bank, Banani branch\nA/C 1501-2040-567801", 'footer_text' => 'Thank you for your business.']);
         $template->forceFill(['is_default' => true])->save();
+        $services = ItemCategory::create(['company_id' => $company->id, 'name' => 'Services'])->id;
+        $hosting = ItemCategory::create(['company_id' => $company->id, 'name' => 'Hosting'])->id;
         $items = [
-            ['Website development', 'project', 2_50_000_00], ['Annual maintenance', 'year', 60_000_00], ['Cloud hosting', 'month', 5_000_00],
+            ['Website development', 'project', 2_50_000_00, $services], ['Annual maintenance', 'year', 60_000_00, $services], ['Cloud hosting', 'month', 5_000_00, $hosting],
         ];
-        foreach ($items as [$name, $unit, $price]) {
-            Item::create(['company_id' => $company->id, 'name' => $name, 'unit' => $unit, 'price' => $price, 'tax_rate' => 1500, 'account_id' => $income]);
+        foreach ($items as [$name, $unit, $price, $categoryId]) {
+            Item::create(['company_id' => $company->id, 'item_category_id' => $categoryId, 'name' => $name, 'unit' => $unit, 'price' => $price, 'tax_rate' => 1500, 'account_id' => $income]);
         }
         $customers = Party::query()->where('company_id', $company->id)->whereNull('user_id')->orderBy('id')->limit(3)->get();
         $supplier = Party::query()->where('company_id', $company->id)->where('name', 'Cloudline Hosting BD')->firstOrFail();

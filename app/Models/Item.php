@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** A product or service a company sells, with its price (paisa), VAT rate (basis points) and income category. */
-#[Fillable(['company_id', 'name', 'description', 'unit', 'price', 'tax_rate', 'account_id', 'is_active'])]
+/** A product or service a company sells, with its category, price (paisa), VAT rate (basis points) and income category. */
+#[Fillable(['company_id', 'item_category_id', 'name', 'description', 'unit', 'price', 'tax_rate', 'account_id', 'is_active'])]
 class Item extends Model
 {
     /** @use HasFactory<ItemFactory> */
@@ -26,6 +26,11 @@ class Item extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ItemCategory::class, 'item_category_id');
     }
 
     public function account(): BelongsTo

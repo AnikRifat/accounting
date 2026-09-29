@@ -6,12 +6,14 @@ use App\Enums\AccountType;
 use App\Models\Account;
 use App\Models\Company;
 use App\Models\Item;
+use App\Models\ItemCategory;
 use App\Support\CompanyContext;
 use App\Support\DocumentMath;
 use App\Support\Money;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -30,6 +32,8 @@ class Form extends Component
     public ?int $companyId = null;
 
     public string $name = '';
+
+    public string $categoryId = '';
 
     public string $description = '';
 
@@ -51,6 +55,7 @@ class Form extends Component
             abort_unless(auth()->user()->canAccessCompany($item->company_id), 404);
             $this->companyId = $item->company_id;
             $this->name = $item->name;
+            $this->categoryId = (string) $item->item_category_id;
             $this->description = (string) $item->description;
             $this->unit = (string) $item->unit;
             $this->price = Money::toInput($item->price);
@@ -75,6 +80,7 @@ class Form extends Component
         [$this->name, $this->description, $this->unit, $this->price, $this->taxRate] = [trim($this->name), trim($this->description), trim($this->unit), trim($this->price), trim($this->taxRate)];
         $data = $this->validate([
             'name' => ['required', 'string', 'max:150', Rule::unique('items', 'name')->where('company_id', $company->id)->ignore($existing?->id)],
+            'categoryId' => ['nullable', Rule::in($this->categoryOptions($company->id, $existing?->item_category_id)->keys()->map(fn (mixed $id): string => (string) $id)->all())],
             'description' => ['nullable', 'string', 'max:500'],
             'unit' => ['nullable', 'string', 'max:20'],
             'price' => ['required', 'string', function (string $attribute, string $value, Closure $fail): void {
@@ -96,9 +102,9 @@ class Form extends Component
             }],
             'isActive' => ['boolean'],
         ], [],
-            ['name' => __('name'), 'price' => __('price'), 'taxRate' => __('VAT'), 'accountId' => __('income category')]);
+            ['name' => __('name'), 'categoryId' => __('category'), 'price' => __('price'), 'taxRate' => __('VAT'), 'accountId' => __('income category')]);
 
-        $attributes = ['name' => $data['name'], 'description' => $data['description'] !== '' ? $data['description'] : null,
+        $attributes = ['name' => $data['name'], 'item_category_id' => $data['categoryId'] ? (int) $data['categoryId'] : null, 'description' => $data['description'] !== '' ? $data['description'] : null,
             'unit' => $data['unit'] !== '' ? $data['unit'] : null, 'price' => Money::toPaisa($data['price']),
             'tax_rate' => DocumentMath::toBasisPoints($data['taxRate']), 'account_id' => $data['accountId'] !== '' && $data['accountId'] !== null ? (int) $data['accountId'] : null,
             'is_active' => $data['isActive']];
@@ -110,12 +116,26 @@ class Form extends Component
 
     public function render(): View
     {
+        $currentCategory = $this->itemId ? Item::query()->whereKey($this->itemId)->value('item_category_id') : null;
+
         return view('livewire.admin.sales.items.form', [
             'companyName' => Company::visibleTo(auth()->user())->whereKey($this->companyId)->value('name'),
+            'itemCategories' => ['' => __('No category')] + $this->categoryOptions((int) $this->companyId, $currentCategory)->all(),
             'categories' => ['' => __('No category (choose on each line)')] + Account::query()->where('company_id', $this->companyId)
                 ->categories(AccountType::Income)->where(fn ($query) => $query->where('is_active', true)->orWhere('id', (int) $this->accountId))
                 ->orderBy('code')->pluck('name', 'id')->all(),
         ])->layout('layouts.admin');
+    }
+
+    /**
+     * The company's active item categories, plus the one the item already has.
+     *
+     * @return Collection<int, string>
+     */
+    private function categoryOptions(int $companyId, ?int $current): Collection
+    {
+        return ItemCategory::query()->where('company_id', $companyId)
+            ->where(fn ($query) => $query->where('is_active', true)->orWhere('id', $current))->orderBy('name')->pluck('name', 'id');
     }
 
     /** The header company, while it is still the one this page was opened for, visible and active. */

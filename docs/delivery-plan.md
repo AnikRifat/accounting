@@ -485,7 +485,8 @@ without breaking the ledger, company-isolation or money invariants.
   no floats), unit (≤20), unit_price (paisa), discount (paisa or basis points), tax_rate_bps,
   line_subtotal, line_tax, line_total, income_account_id (category the line posts to), sort.
   Rounding: each line's tax rounds half-up to paisa; document totals are sums of rounded lines.
-- **`items`** catalogue per company (name, unit, price, tax_rate_bps, income category, is_active).
+- **`items`** catalogue per company (name, unit, price, tax_rate_bps, income category, is_active), with an optional
+  **`item_categories`** row per company (name unique per company, is_active; a used category is deactivated, not deleted).
   Optional: a line can be free text.
 - **Numbering**: `document_sequences` per company per type (prefix + zero-padded sequence, default
   `INV-00001`, `QUO-…`, `PO-…`, `BILL-…`; prefix and padding editable, e.g. `INV-2026-`), taken in

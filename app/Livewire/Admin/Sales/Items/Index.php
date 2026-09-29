@@ -4,6 +4,7 @@ namespace App\Livewire\Admin\Sales\Items;
 
 use App\Livewire\Concerns\WithFormSheet;
 use App\Models\Item;
+use App\Models\ItemCategory;
 use App\Support\CompanyContext;
 use App\Support\Configuration;
 use Illuminate\Contracts\View\View;
@@ -24,12 +25,21 @@ class Index extends Component
     #[Url(except: '')]
     public string $status = '';
 
+    /** Category name ('none' for items without one): names merge across companies in "All companies". */
+    #[Url(except: '')]
+    public string $category = '';
+
     public function updatedSearch(): void
     {
         $this->resetPage();
     }
 
     public function updatedStatus(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedCategory(): void
     {
         $this->resetPage();
     }
@@ -53,9 +63,13 @@ class Index extends Component
 
         return view('livewire.admin.sales.items.index', [
             'showCompany' => app(CompanyContext::class)->isAll(),
+            'categoryOptions' => ['' => __('Any category')] + ItemCategory::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->orderBy('name')
+                ->pluck('name')->unique()->mapWithKeys(fn (string $name): array => [$name => $name])->all() + ['none' => __('No category')],
             'statusOptions' => ['' => __('Active and inactive'), 'active' => __('Active'), 'inactive' => __('Inactive')],
-            'items' => Item::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company:id,name', 'account:id,name'])
+            'items' => Item::query()->whereIn('company_id', app(CompanyContext::class)->companyIds())->with(['company:id,name', 'category:id,name', 'account:id,name'])
                 ->when($search !== '', fn ($query) => $query->where(fn ($q) => $q->where('name', 'like', '%'.$search.'%')->orWhere('description', 'like', '%'.$search.'%')))
+                ->when($this->category === 'none', fn ($query) => $query->whereNull('item_category_id'))
+                ->when(! in_array($this->category, ['', 'none'], true), fn ($query) => $query->whereHas('category', fn ($q) => $q->where('name', $this->category)))
                 ->when($this->status !== '', fn ($query) => $query->where('is_active', $this->status === 'active'))
                 ->orderBy('name')->orderBy('id')->paginate(Configuration::get('general.rows_per_page')),
         ])->layout('layouts.admin');

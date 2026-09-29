@@ -46,6 +46,7 @@
             ],
             __('Sales setup') => [
                 'sales.items.index' => ['sales.view', __('Items'), '📦'],
+                'sales.item-categories.index' => ['sales.view', __('Item categories'), '🗂️'],
                 'sales.templates.index' => ['sales.setup', __('Templates'), '🎨'],
                 'sales.settings' => ['sales.setup', __('Numbering & fields'), '⚙️'],
             ],

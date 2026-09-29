@@ -7,6 +7,7 @@
     <form wire:submit="save" class="stack">
         <x-card :title="__('Item details')">
             <x-form.input name="name" :label="__('Name')" wire:model="name" required maxlength="150" autocomplete="off" :placeholder="__('Website design, Rice 25 kg bag…')" />
+            <x-form.select name="categoryId" :label="__('Category')" wire:model="categoryId" :options="$itemCategories" :help="__('Groups items in the catalogue. Manage the list under Item categories.')" />
             <x-form.input name="description" :label="__('Description')" wire:model="description" maxlength="500" autocomplete="off" :help="__('Copied onto the invoice line; you can change it there.')" />
             <div class="form-grid">
                 <x-form.input name="unit" :label="__('Unit')" wire:model="unit" maxlength="20" autocomplete="off" :placeholder="__('pcs, hour, kg…')" />

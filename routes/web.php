@@ -61,6 +61,8 @@ use App\Livewire\Admin\Sales\Dashboard as SalesDashboard;
 use App\Livewire\Admin\Sales\Documents\Form as DocumentForm;
 use App\Livewire\Admin\Sales\Documents\Index as DocumentIndex;
 use App\Livewire\Admin\Sales\Documents\Show as DocumentShow;
+use App\Livewire\Admin\Sales\ItemCategories\Form as ItemCategoryForm;
+use App\Livewire\Admin\Sales\ItemCategories\Index as ItemCategoryIndex;
 use App\Livewire\Admin\Sales\Items\Form as ItemForm;
 use App\Livewire\Admin\Sales\Items\Index as ItemIndex;
 use App\Livewire\Admin\Sales\Recurring\Form as RecurringForm;
@@ -188,6 +190,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
         Route::livewire('/items', ItemIndex::class)->name('items.index');
         Route::livewire('/items/create', ItemForm::class)->middleware(['can:sales.setup', 'company.selected'])->name('items.create');
         Route::livewire('/items/{item}/edit', ItemForm::class)->middleware('can:sales.setup')->name('items.edit');
+        Route::livewire('/item-categories', ItemCategoryIndex::class)->name('item-categories.index');
+        Route::livewire('/item-categories/create', ItemCategoryForm::class)->middleware(['can:sales.setup', 'company.selected'])->name('item-categories.create');
+        Route::livewire('/item-categories/{itemCategory}/edit', ItemCategoryForm::class)->middleware('can:sales.setup')->name('item-categories.edit');
         Route::livewire('/recurring', RecurringIndex::class)->name('recurring.index');
         Route::livewire('/recurring/create', RecurringForm::class)->middleware(['can:sales.update', 'company.selected'])->name('recurring.create');
         Route::livewire('/recurring/{recurring}/edit', RecurringForm::class)->middleware('can:sales.update')->name('recurring.edit');
