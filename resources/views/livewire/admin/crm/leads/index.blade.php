@@ -24,12 +24,14 @@
         </x-slot:toolbar>
         <x-table.bulk />
         <x-table :caption="__('Leads')">
-            <x-slot:head><x-table.check-all :ids="$leads->pluck('id')->all()" /><th>{{ __('Lead') }}</th><th>{{ __('Phone') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Status') }}</th><th>{{ __('Service') }}</th>@if($seesAll)<th>{{ __('Assigned to') }}</th>@endif<th>{{ __('Next call') }}</th><th>{{ __('Last call') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
+            <x-slot:head><x-table.check-all :ids="$leads->pluck('id')->all()" /><th>{{ __('Lead') }}</th>@if($showCompany)<th>{{ __('Company') }}</th>@endif<th>{{ __('Status') }}</th><th>{{ __('Service') }}</th>@if($seesAll)<th>{{ __('Assigned to') }}</th>@endif<th>{{ __('Next call') }}</th><th>{{ __('Last call') }}</th><th class="actions-col"><span class="sr-only">{{ __('Actions') }}</span></th></x-slot:head>
             @forelse($leads as $lead)
                 <tr wire:key="lead-{{ $lead->id }}">
                     <x-table.check :value="$lead->id" :label="$lead->displayName()" />
-                    <td><div class="flex items-center gap-3"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" /><div><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>@if($lead->organization)<p class="muted">{{ $lead->organization }}</p>@endif</div></div></td>
-                    <td class="nowrap"><a class="text-link" href="tel:{{ $lead->phone }}">{{ $lead->phone }}</a></td>
+                    <td><div class="flex items-center gap-3"><x-avatar :url="$lead->photoUrl()" :name="$lead->name ?? ''" /><div><a class="font-semibold text-heading" href="{{ route('admin.crm.leads.show', $lead) }}" wire:navigate>{{ $lead->displayName() }}</a>
+                        <p class="nowrap"><a class="text-link" href="tel:{{ $lead->phone }}">{{ $lead->phone }}</a></p>
+                        @if($lead->email)<p><a class="text-link" href="mailto:{{ $lead->email }}">{{ $lead->email }}</a></p>@endif
+                        @if($lead->organization)<p class="muted">{{ $lead->organization }}</p>@endif</div></div></td>
                     @if($showCompany)<td>{{ $lead->company->name }}</td>@endif
                     <td><x-badge :tone="$lead->status->tone">{{ $lead->status->name }}</x-badge></td>
                     <td>{{ $lead->service?->name ?? '—' }}</td>
@@ -44,7 +46,7 @@
                     </div></td>
                 </tr>
             @empty
-                <x-table.empty :colspan="10" emoji="🧲">{{ __('No leads found.') }}</x-table.empty>
+                <x-table.empty :colspan="9" emoji="🧲">{{ __('No leads found.') }}</x-table.empty>
             @endforelse
         </x-table>
         {{ $leads->links() }}
