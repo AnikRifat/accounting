@@ -17,7 +17,7 @@ class RegisterRequest extends LoginRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'max:255', 'confirmed', Password::min(12)->letters()->numbers()],
+            'password' => ['required', 'string', 'max:255', 'confirmed', Password::min(6)->letters()->numbers()],
         ];
     }
 }

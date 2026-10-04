@@ -85,7 +85,7 @@ class Profile extends Component
 
         $data = $this->validate([
             'current_password' => ['required', 'string', 'current_password'],
-            'password' => ['required', 'string', 'max:255', 'confirmed', Password::min(12)->letters()->numbers()],
+            'password' => ['required', 'string', 'max:255', 'confirmed', Password::min(6)->letters()->numbers()],
         ], [], [
             'current_password' => __('current password'),
             'password' => __('new password'),

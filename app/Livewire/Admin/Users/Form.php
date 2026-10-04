@@ -133,7 +133,7 @@ class Form extends Component
                 }
             }],
             'joinedOn' => ['nullable', 'date_format:Y-m-d'],
-            'password' => [$this->userId ? 'nullable' : 'required', 'string', 'max:255', 'confirmed', Password::min(12)->letters()->numbers()],
+            'password' => [$this->userId ? 'nullable' : 'required', 'string', 'max:255', 'confirmed', Password::min(6)->letters()->numbers()],
             'isActive' => ['boolean'], 'role' => ['required', Rule::in($allowedRoles)],
             'extraRoles' => ['array'], 'extraRoles.*' => ['string', 'distinct', Rule::in($allowedExtras)],
             'permissions' => ['array'], 'permissions.*' => ['string', 'distinct', Rule::in($registry->catalogue())],

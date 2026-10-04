@@ -98,11 +98,11 @@ class ProfileTest extends TestCase
             ->call('updatePassword')
             ->assertHasErrors(['password']);
 
-        // Too short (<12 chars)
+        // Too short (<6 chars)
         Livewire::test(Profile::class)
             ->set('current_password', 'ValidPass123456')
-            ->set('password', 'Short12')
-            ->set('password_confirmation', 'Short12')
+            ->set('password', 'Ab12')
+            ->set('password_confirmation', 'Ab12')
             ->call('updatePassword')
             ->assertHasErrors(['password']);
 
