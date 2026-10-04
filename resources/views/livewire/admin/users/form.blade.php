@@ -37,7 +37,7 @@
             </fieldset>
             @can('permissions.manage')
                 <fieldset class="stack-sm"><legend>{{ __('Personal permissions') }}</legend><p class="muted">{{ __('Uncheck an ability to restrict this account. Personal permissions can never exceed the union of its roles.') }}</p>
-                    <div class="permission-grid">@foreach(config('permissions.catalogue') as $group => $abilities)<div class="permission-group" wire:key="permission-group-{{ $loop->index }}"><h3>{{ __($group) }}</h3>@foreach($abilities as $ability)<div wire:key="ability-{{ $ability }}"><x-form.checkbox name="permissions" :id="'permission-'.$ability" :label="str($ability)->replace('.', ' ')->headline()" :value="$ability" wire:model="permissions" :disabled="! in_array($ability, $ceiling, true)" /></div>@endforeach</div>@endforeach</div>
+                    <div class="permission-grid">@foreach(config('permissions.catalogue') as $group => $abilities)<div class="permission-group" wire:key="permission-group-{{ $loop->index }}"><h3>{{ __($group) }}</h3>@foreach($abilities as $ability)<div wire:key="ability-{{ $ability }}"><x-form.checkbox name="permissions" :id="'permission-'.$ability" :label="$registry->abilityLabel($ability)" :value="$ability" wire:model="permissions" :disabled="! in_array($ability, $ceiling, true)" /></div>@endforeach</div>@endforeach</div>
                 </fieldset>
             @endcan
         </x-card>

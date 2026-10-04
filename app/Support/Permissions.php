@@ -63,6 +63,11 @@ class Permissions
         return $this->isCustom($role) ? ($this->rows()[$role]->label ?? Str::headline($role)) : Str::headline($role);
     }
 
+    public function abilityLabel(string $ability): string
+    {
+        return $ability === 'admin.access' ? __('Sign in to the admin panel') : __(Str::headline(str_replace('.', ' ', $ability)));
+    }
+
     public function forRole(string $role): array
     {
         if ($role === self::ROOT_ROLE) {

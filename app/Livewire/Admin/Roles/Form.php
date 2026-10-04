@@ -34,6 +34,8 @@ class Form extends Component
             $this->label = $registry->label($role);
             $this->isActive = $registry->isActive($role);
             $this->permissions = $registry->forRole($role);
+        } else {
+            $this->permissions = ['admin.access'];
         }
     }
 

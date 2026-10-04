@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Livewire\Admin\Roles\Form;
 use App\Livewire\Admin\Roles\Index;
+use App\Livewire\Auth\Login;
 use App\Models\RolePermission;
 use App\Models\User;
 use App\Support\Permissions;
@@ -67,6 +68,31 @@ class PermissionsTest extends TestCase
         Livewire::test(Form::class)->set('label', 'Reviewer')->set('permissions', ['*'])->call('save')->assertHasErrors('permissions.0');
         Livewire::test(Form::class)->set('label', 'Reviewer')->set('permissions', ['users.view'])->call('save')->assertHasNoErrors();
         $this->assertDatabaseHas('role_permissions', ['role' => 'reviewer', 'label' => 'Reviewer']);
+    }
+
+    public function test_a_new_custom_role_starts_with_sign_in_so_its_holders_can_sign_in(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'owner']));
+        $form = Livewire::test(Form::class)->assertSet('permissions', ['admin.access']);
+        $form->set('label', 'Sales Executive')->set('permissions', [...$form->get('permissions'), 'crm.view'])->call('save')->assertHasNoErrors();
+        auth()->logout();
+
+        $holder = User::factory()->create(['role' => 'sales_executive', 'password' => 'StrongPass12345']);
+        Livewire::test(Login::class)->set('email', $holder->email)->set('password', 'StrongPass12345')->call('authenticate')->assertHasNoErrors();
+        $this->assertAuthenticatedAs($holder);
+    }
+
+    public function test_sign_in_says_when_the_role_lacks_the_sign_in_ability(): void
+    {
+        RolePermission::factory()->create(['role' => 'caller', 'permissions' => ['crm.view']]);
+        $holder = User::factory()->create(['role' => 'caller', 'password' => 'StrongPass12345']);
+
+        Livewire::test(Login::class)->set('email', $holder->email)->set('password', 'StrongPass12345')->call('authenticate')
+            ->assertHasErrors('email')->assertSee(__('Your role is not allowed to sign in. Ask an administrator to turn on "Sign in to the admin panel" for it.'));
+        $this->assertGuest();
+
+        Livewire::test(Login::class)->set('email', $holder->email)->set('password', 'WrongPass12345')->call('authenticate')
+            ->assertHasErrors('email')->assertSee(__('The provided credentials are incorrect or admin access is unavailable.'));
     }
 
     public function test_system_roles_keep_their_names_but_their_abilities_can_change_and_they_can_be_disabled(): void

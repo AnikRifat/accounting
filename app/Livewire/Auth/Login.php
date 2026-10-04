@@ -28,10 +28,16 @@ class Login extends Component
 
             return null;
         }
-        if (! Auth::attempt([...$data, 'is_active' => true], $this->remember) || ! Gate::allows('admin.access')) {
-            Auth::logout();
+        if (! Auth::attempt([...$data, 'is_active' => true], $this->remember)) {
             RateLimiter::hit($key, 60);
             $this->addError('email', __('The provided credentials are incorrect or admin access is unavailable.'));
+
+            return null;
+        }
+        // The password is proven here, so naming the missing ability reveals nothing to a guesser.
+        if (! Gate::allows('admin.access')) {
+            Auth::logout();
+            $this->addError('email', __('Your role is not allowed to sign in. Ask an administrator to turn on "Sign in to the admin panel" for it.'));
 
             return null;
         }

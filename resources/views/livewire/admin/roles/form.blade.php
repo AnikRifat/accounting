@@ -11,7 +11,7 @@
             <p class="muted">{{ __('Disabling removes this role from new assignments. Existing holders keep their permissions.') }}</p>
         </x-card>
         <x-card :title="__('Abilities')">
-            <div class="permission-grid">@foreach(config('permissions.catalogue') as $group => $abilities)<fieldset class="permission-group" wire:key="group-{{ $loop->index }}"><legend>{{ __($group) }}</legend>@foreach($abilities as $ability)<div wire:key="ability-{{ $ability }}"><x-form.checkbox name="permissions" :id="'ability-'.$ability" :label="__(str($ability)->replace('.', ' ')->headline()->toString())" :value="$ability" wire:model="permissions" :disabled="! auth()->user()->hasPermission('permissions.manage')" /></div>@endforeach</fieldset>@endforeach</div>
+            <div class="permission-grid">@foreach(config('permissions.catalogue') as $group => $abilities)<fieldset class="permission-group" wire:key="group-{{ $loop->index }}"><legend>{{ __($group) }}</legend>@foreach($abilities as $ability)<div wire:key="ability-{{ $ability }}"><x-form.checkbox name="permissions" :id="'ability-'.$ability" :label="$registry->abilityLabel($ability)" :value="$ability" wire:model="permissions" :disabled="! auth()->user()->hasPermission('permissions.manage')" /></div>@endforeach</fieldset>@endforeach</div>
         </x-card>
         <x-form.actions :submit="__('Save role')" :cancel="route('admin.roles.index')" />
     </form>
