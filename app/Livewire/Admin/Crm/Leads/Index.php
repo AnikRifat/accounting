@@ -66,9 +66,10 @@ class Index extends Component
         $lead = Lead::visibleTo(auth()->user())->whereIn('company_id', app(CompanyContext::class)->companyIds())->findOrFail($leadId);
         DB::transaction(function () use ($lead): void {
             $lead->calls()->delete();
+            $lead->emails()->delete();
             $lead->delete();
         });
-        session()->now('success', __('Lead :name and its calls deleted.', ['name' => $lead->displayName()]));
+        session()->now('success', __('Lead :name, its calls and emails deleted.', ['name' => $lead->displayName()]));
     }
 
     public function render(): View

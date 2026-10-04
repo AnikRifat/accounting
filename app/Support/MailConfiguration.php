@@ -9,6 +9,14 @@ namespace App\Support;
  */
 final class MailConfiguration
 {
+    /** False when the mailer in use only writes email to the log (or keeps it in memory), so nothing reaches anyone. */
+    public static function delivers(): bool
+    {
+        app('mail.manager');
+
+        return ! in_array(config('mail.mailers.'.config('mail.default').'.transport'), ['log', 'array'], true);
+    }
+
     public static function apply(): void
     {
         if (Configuration::get('mail.mailer') === 'smtp') {

@@ -17,6 +17,7 @@ use App\Models\Item;
 use App\Models\JournalEntry;
 use App\Models\Lead;
 use App\Models\LeadCall;
+use App\Models\LeadEmail;
 use App\Models\Media;
 use App\Models\Party;
 use App\Models\RecurringInvoice;
@@ -66,6 +67,7 @@ class RecordDeletion
             $record instanceof User && $record->isRoot() => __('The super admin cannot be deleted.'),
             $record instanceof User && $this->relatedEntries($record)->exists() => __('This employee appears in transactions, as the one who entered, edited, voided or paid them, or as their party. Deactivate the employee instead, so the history keeps their name.'),
             $record instanceof User && LeadCall::query()->where('user_id', $record->id)->exists() => __('This employee has logged CRM calls. Deactivate the employee instead, so the call history keeps their name.'),
+            $record instanceof User && LeadEmail::query()->where('user_id', $record->id)->exists() => __('This employee has emailed CRM leads. Deactivate the employee instead, so the email log keeps their name.'),
             default => null,
         };
     }
@@ -178,6 +180,7 @@ class RecordDeletion
             DB::afterCommit(fn () => $photos->each(fn (Media $media) => app(MediaService::class)->detach($media)));
             $this->deleteSalesData($company);
             LeadCall::query()->where('company_id', $company->id)->delete();
+            LeadEmail::query()->where('company_id', $company->id)->delete();
             Lead::query()->where('company_id', $company->id)->delete();
             CrmStatus::query()->where('company_id', $company->id)->delete();
             CrmService::query()->where('company_id', $company->id)->delete();

@@ -71,6 +71,11 @@ class Lead extends Model
         return $this->hasMany(LeadCall::class);
     }
 
+    public function emails(): HasMany
+    {
+        return $this->hasMany(LeadEmail::class);
+    }
+
     public function latestCall(): HasOne
     {
         return $this->hasOne(LeadCall::class)->ofMany(['called_at' => 'max', 'id' => 'max']);

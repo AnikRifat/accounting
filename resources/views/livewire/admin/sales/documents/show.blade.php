@@ -68,7 +68,7 @@
                     @endcan
                 @endif
                 @if($canSend)
-                    <x-button variant="secondary" icon="upload" wire:click="openEmail">{{ __('Email') }}</x-button>
+                    <x-button variant="secondary" icon="mail" wire:click="openEmail">{{ __('Email') }}</x-button>
                 @endif
                 @if($document->isOpen())
                     @can('sales.void')<x-button variant="danger" icon="ban" wire:click="openVoid">{{ __('Void') }}</x-button>@endcan
@@ -216,7 +216,7 @@
                 <textarea id="emailMessage" name="emailMessage" class="form-control h-auto py-2" rows="8" wire:model="emailMessage" maxlength="5000" required aria-invalid="{{ $errors->has('emailMessage') ? 'true' : 'false' }}"></textarea>
                 @error('emailMessage')<p class="error">{{ $message }}</p>@enderror
             </div>
-            <x-slot:footer><x-button type="submit" icon="upload" wire:loading.attr="disabled" wire:target="sendEmail">{{ __('Send') }}</x-button><x-button variant="ghost" x-on:click="open = false">{{ __('Cancel') }}</x-button></x-slot:footer>
+            <x-slot:footer><x-button type="submit" icon="mail" wire:loading.attr="disabled" wire:target="sendEmail">{{ __('Send') }}</x-button><x-button variant="ghost" x-on:click="open = false">{{ __('Cancel') }}</x-button></x-slot:footer>
         </x-drawer>
     @endif
 </div>

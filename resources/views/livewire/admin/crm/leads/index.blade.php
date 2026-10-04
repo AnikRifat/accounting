@@ -38,8 +38,9 @@
                     <td>@if($lead->latestCall)<span class="nowrap">{{ $lead->latestCall->called_at->format('d M Y') }}</span>@if($lead->latestCall->summary)<p class="muted">{{ \Illuminate\Support\Str::limit($lead->latestCall->summary, 60) }}</p>@endif @else<span class="muted">{{ __('Never called') }}</span>@endif</td>
                     <td><div class="row-actions">
                         @can('crm.calls.create')<x-button variant="ghost" size="sm" icon="phone" :href="route('admin.crm.calls.create', $lead)" :navigate="false" wire:click.prevent="openSheet('call:{{ $lead->id }}')" :label="__('Log a call with :name', ['name' => $lead->displayName()])" />@endcan
+                        @can('crm.emails.send')<x-button variant="ghost" size="sm" icon="mail" :href="route('admin.crm.emails.create', $lead)" :navigate="false" wire:click.prevent="openSheet('email:{{ $lead->id }}')" :label="__('Email :name', ['name' => $lead->displayName()])" />@endcan
                         @can('crm.leads.update')<x-button variant="ghost" size="sm" icon="pencil" :href="route('admin.crm.leads.edit', $lead)" :navigate="false" wire:click.prevent="openSheet('edit:{{ $lead->id }}')" :label="__('Edit :name', ['name' => $lead->displayName()])" />@endcan
-                        @can('crm.leads.delete')<x-button variant="ghost" size="sm" icon="trash" class="text-danger" wire:click="delete({{ $lead->id }})" wire:confirm="{{ __('Delete :name and every call logged with them?', ['name' => $lead->displayName()]) }}" :label="__('Delete :name', ['name' => $lead->displayName()])" />@endcan
+                        @can('crm.leads.delete')<x-button variant="ghost" size="sm" icon="trash" class="text-danger" wire:click="delete({{ $lead->id }})" wire:confirm="{{ __('Delete :name and every call and email logged with them?', ['name' => $lead->displayName()]) }}" :label="__('Delete :name', ['name' => $lead->displayName()])" />@endcan
                     </div></td>
                 </tr>
             @empty
@@ -55,6 +56,8 @@
             <livewire:admin.crm.leads.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'call')
             <livewire:admin.crm.calls.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :return-to="route('admin.crm.leads.index', array_filter(['search' => $search, 'status' => $status, 'service' => $service, 'source' => $source, 'assignee' => $assignee, 'follow_up' => $followUp, 'from' => $from, 'to' => $to]))" :key="'sheet-'.$sheet" />
+        @elseif($this->sheetAction() === 'email')
+            <livewire:admin.crm.emails.form :lead="\App\Models\Lead::visibleTo(auth()->user())->findOrFail((int) $this->sheetArgument())" :return-to="route('admin.crm.leads.index', array_filter(['search' => $search, 'status' => $status, 'service' => $service, 'source' => $source, 'assignee' => $assignee, 'follow_up' => $followUp, 'from' => $from, 'to' => $to]))" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'import')
             <livewire:admin.crm.leads.import :key="'sheet-'.$sheet" />
         @endif

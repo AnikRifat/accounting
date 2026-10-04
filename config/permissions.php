@@ -9,7 +9,7 @@ return [
         'data-entry' => ['admin.access', 'dashboard.view', 'companies.view', 'accounts.view', 'entries.view', 'entries.create', 'parties.view', 'parties.create',
             'sales.view', 'sales.create'],
         'member' => ['media.view', 'media.upload', 'media.delete'],
-        'sales' => ['admin.access', 'companies.view', 'crm.view', 'crm.leads.create', 'crm.leads.update', 'crm.calls.create', 'crm.calls.update'],
+        'sales' => ['admin.access', 'companies.view', 'crm.view', 'crm.leads.create', 'crm.leads.update', 'crm.calls.create', 'crm.calls.update', 'crm.emails.send'],
         'sales-manager' => ['admin.access', 'companies.view', 'crm.*', 'users.view'],
     ],
     'catalogue' => [
@@ -24,6 +24,6 @@ return [
         'Media' => ['media.view', 'media.upload', 'media.delete', 'media.manage'],
         'Sales' => ['sales.view', 'sales.create', 'sales.update', 'sales.void', 'sales.delete', 'sales.payments', 'sales.send', 'sales.setup', 'sales.reports'],
         'CRM' => ['crm.view', 'crm.leads.all', 'crm.leads.create', 'crm.leads.update', 'crm.leads.delete', 'crm.leads.import',
-            'crm.calls.create', 'crm.calls.update', 'crm.calls.delete', 'crm.setup.manage', 'crm.reports.view'],
+            'crm.calls.create', 'crm.calls.update', 'crm.calls.delete', 'crm.emails.send', 'crm.setup.manage', 'crm.reports.view'],
     ],
 ];

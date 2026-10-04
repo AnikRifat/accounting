@@ -4,6 +4,7 @@ namespace App\Livewire\Admin;
 
 use App\Mail\TestMail;
 use App\Support\Configuration;
+use App\Support\MailConfiguration;
 use App\Support\Modules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
@@ -104,8 +105,7 @@ class Settings extends Component
 
             return;
         }
-        $mailer = config('mail.default');
-        $this->testResult = in_array(config("mail.mailers.{$mailer}.transport"), ['log', 'array'], true)
+        $this->testResult = ! MailConfiguration::delivers()
             ? ['tone' => 'warning', 'message' => __('The server configuration writes email to the log instead of sending it. Choose SMTP server to deliver email.')]
             : ['tone' => 'success', 'message' => __('Test email sent to :email. Check the inbox and the spam folder.', ['email' => $this->testEmail])];
     }

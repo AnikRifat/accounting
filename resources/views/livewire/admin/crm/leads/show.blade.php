@@ -5,6 +5,7 @@
         <x-slot:actions>
             @can('crm.leads.update')<x-button variant="secondary" icon="pencil" :href="route('admin.crm.leads.edit', $lead)" :navigate="false" wire:click.prevent="openSheet('edit')">{{ __('Edit') }}</x-button>@endcan
             @can('crm.calls.create')<x-button icon="phone" :href="route('admin.crm.calls.create', $lead)" :navigate="false" wire:click.prevent="openSheet('call')">{{ __('Log a call') }}</x-button>@endcan
+            @can('crm.emails.send')<x-button variant="secondary" icon="mail" :href="route('admin.crm.emails.create', $lead)" :navigate="false" wire:click.prevent="openSheet('email')">{{ __('Email') }}</x-button>@endcan
         </x-slot:actions>
     </x-page-header>
     <div class="stats">
@@ -46,11 +47,27 @@
             </x-table>
         </x-card>
     </div>
+    <x-card :title="__('Emails')" flush>
+        <x-table :caption="__('Emails')">
+            <x-slot:head><th>{{ __('When') }}</th><th>{{ __('Email') }}</th><th>{{ __('Status') }}</th></x-slot:head>
+            @forelse($emails as $email)
+                <tr wire:key="email-{{ $email->id }}">
+                    <td class="nowrap">{{ $email->sent_at->format('d M Y') }}<p class="muted">{{ $email->sent_at->format('h:i A') }} · {{ $email->user->name }}</p></td>
+                    <td><x-crm.email-message :email="$email" /><p class="muted">{{ __('To: :address', ['address' => $email->to]) }}</p></td>
+                    <td><x-badge :tone="$email->failed() ? 'danger' : 'success'">{{ $email->failed() ? __('Failed') : __('Sent') }}</x-badge></td>
+                </tr>
+            @empty
+                <x-table.empty :colspan="3" emoji="✉️">{{ __('No emails yet.') }}</x-table.empty>
+            @endforelse
+        </x-table>
+    </x-card>
     <x-sheet :label="__('Lead')">
         @if($this->sheetAction() === 'edit')
             <livewire:admin.crm.leads.form :lead="$lead" :return-to="route('admin.crm.leads.show', $lead)" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'call')
             <livewire:admin.crm.calls.form :lead="$lead" :return-to="route('admin.crm.leads.show', $lead)" :key="'sheet-'.$sheet" />
+        @elseif($this->sheetAction() === 'email')
+            <livewire:admin.crm.emails.form :lead="$lead" :return-to="route('admin.crm.leads.show', $lead)" :key="'sheet-'.$sheet" />
         @elseif($this->sheetAction() === 'edit-call')
             <livewire:admin.crm.calls.form :call="\App\Models\LeadCall::visibleTo(auth()->user())->where('lead_id', $lead->id)->findOrFail((int) $this->sheetArgument())" :return-to="route('admin.crm.leads.show', $lead)" :key="'sheet-'.$sheet" />
         @endif

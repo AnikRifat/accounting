@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-/** One lead with its whole call history. Calls are logged and edited in a sheet over this page. */
+/** One lead with its whole call and email history. Calls are logged and edited, and emails written, in a sheet over this page. */
 class Show extends Component
 {
     use WithFormSheet;
@@ -43,6 +43,7 @@ class Show extends Component
         return view('livewire.admin.crm.leads.show', [
             'lead' => $lead,
             'calls' => $lead->calls()->with(['user:id,name', 'callStatus:id,name,tone', 'leadStatus:id,name,tone'])->orderByDesc('called_at')->orderByDesc('id')->get(),
+            'emails' => $lead->emails()->with('user:id,name')->orderByDesc('sent_at')->orderByDesc('id')->get(),
             'editsAny' => Gate::allows('crm.leads.all'),
         ])->layout('layouts.admin');
     }

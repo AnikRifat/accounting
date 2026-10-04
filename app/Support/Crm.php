@@ -8,6 +8,7 @@ use App\Models\CrmSource;
 use App\Models\CrmStatus;
 use App\Models\Lead;
 use App\Models\LeadCall;
+use App\Models\LeadEmail;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -125,7 +126,7 @@ final class Crm
     }
 
     /**
-     * People for the "assigned to" and "logged by" filters: whoever holds leads or logged calls in the companies,
+     * People for the "assigned to", "logged by" and "sent by" filters: whoever holds leads, logged calls or emailed leads in the companies,
      * and every active CRM user who can access one of them.
      *
      * @param  list<int>  $companyIds
@@ -138,7 +139,8 @@ final class Crm
                 && ($user->hasPermission('companies.all') || $user->companies->pluck('id')->intersect($companyIds)->isNotEmpty()))
             ->pluck('id');
         $involved = Lead::query()->whereIn('company_id', $companyIds)->whereNotNull('assigned_to')->distinct()->pluck('assigned_to')
-            ->merge(LeadCall::query()->whereIn('company_id', $companyIds)->distinct()->pluck('user_id'));
+            ->merge(LeadCall::query()->whereIn('company_id', $companyIds)->distinct()->pluck('user_id'))
+            ->merge(LeadEmail::query()->whereIn('company_id', $companyIds)->distinct()->pluck('user_id'));
 
         return User::query()->whereKey($active->merge($involved)->unique()->all())->orderBy('name')->pluck('name', 'id')->all();
     }

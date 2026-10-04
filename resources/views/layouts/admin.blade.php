@@ -12,6 +12,7 @@
             __('Sales') => [
                 'crm.leads.index' => ['crm.view', __('Leads'), '🧲'],
                 'crm.calls.index' => ['crm.view', __('Call log'), '📞'],
+                'crm.emails.index' => ['crm.view', __('Email log'), '✉️'],
             ],
             __('Reports') => [
                 'crm.reports.index' => ['crm.reports.view', __('Reports'), '📊'],

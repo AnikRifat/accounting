@@ -20,6 +20,8 @@ use App\Livewire\Admin\Companies\Index as CompanyIndex;
 use App\Livewire\Admin\Crm\Calls\Form as CallForm;
 use App\Livewire\Admin\Crm\Calls\Index as CallIndex;
 use App\Livewire\Admin\Crm\Dashboard as CrmDashboard;
+use App\Livewire\Admin\Crm\Emails\Form as EmailForm;
+use App\Livewire\Admin\Crm\Emails\Index as EmailIndex;
 use App\Livewire\Admin\Crm\Insights as CrmInsights;
 use App\Livewire\Admin\Crm\Leads\Form as LeadForm;
 use App\Livewire\Admin\Crm\Leads\Index as LeadIndex;
@@ -157,6 +159,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'active', 'can:admin
         Route::livewire('/leads/{lead}/calls/create', CallForm::class)->whereNumber('lead')->middleware('can:crm.calls.create')->name('calls.create');
         Route::livewire('/calls', CallIndex::class)->name('calls.index');
         Route::livewire('/calls/{call}/edit', CallForm::class)->whereNumber('call')->middleware('can:crm.calls.update')->name('calls.edit');
+        Route::livewire('/leads/{lead}/emails/create', EmailForm::class)->whereNumber('lead')->middleware('can:crm.emails.send')->name('emails.create');
+        Route::livewire('/emails', EmailIndex::class)->name('emails.index');
         Route::livewire('/services', CrmServiceIndex::class)->name('services.index');
         Route::livewire('/services/create', CrmServiceForm::class)->middleware(['can:crm.setup.manage', 'company.selected'])->name('services.create');
         Route::livewire('/services/{service}/edit', CrmServiceForm::class)->middleware('can:crm.setup.manage')->name('services.edit');
