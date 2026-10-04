@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Http\Middleware\RememberModule;
 use App\Models\User;
 use App\Support\Configuration;
+use App\Support\MailConfiguration;
 use App\Support\Permissions;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -32,6 +33,10 @@ class AppServiceProvider extends ServiceProvider
             Gate::define($permission, fn (User $user): bool => $user->hasPermission($permission));
         }
         // Livewire updates re-run this against the page's route, so a disabled module's components stay closed.
+        // Settings > Mail decides how email goes out; applied before the mail manager builds its first mailer.
+        $this->callAfterResolving('mail.manager', function (): void {
+            MailConfiguration::apply();
+        });
         Livewire::addPersistentMiddleware([RememberModule::class]);
         RateLimiter::for('api', fn (Request $request): Limit => Limit::perMinute(120)
             ->by($request->user()?->id ?? $request->ip()));
