@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Modules;
 use Database\Factories\ItemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,6 +42,6 @@ class Item extends Model
     /** Items of the companies the user may access. */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('company_id', $user->accessibleCompanyIds());
+        $query->whereIn('company_id', $user->accessibleCompanyIds(Modules::SALES));
     }
 }

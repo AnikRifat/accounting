@@ -10,6 +10,7 @@ use App\Models\Document;
 use App\Models\RecurringInvoice;
 use App\Services\RecurringInvoices;
 use App\Support\CompanyContext;
+use App\Support\Modules;
 use App\Support\Money;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -52,7 +53,7 @@ class Form extends Component
         Gate::authorize('sales.update');
         $this->scheduleId = $recurring?->exists ? $recurring->id : null;
         if ($this->scheduleId) {
-            abort_unless(auth()->user()->canAccessCompany($recurring->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($recurring->company_id, Modules::SALES), 404);
             $this->companyId = $recurring->company_id;
             [$this->name, $this->sourceId, $this->frequency, $this->day] = [$recurring->name, (string) $recurring->source_id, $recurring->frequency->value, (string) $recurring->day];
             [$this->startsOn, $this->endsOn, $this->isActive] = [$recurring->starts_on->toDateString(), (string) $recurring->ends_on?->toDateString(), $recurring->is_active];
@@ -80,7 +81,7 @@ class Form extends Component
     public function save(): Redirector|RedirectResponse|null
     {
         Gate::authorize('sales.update');
-        $existing = $this->scheduleId ? RecurringInvoice::query()->whereIn('company_id', auth()->user()->accessibleCompanyIds())->findOrFail($this->scheduleId) : null;
+        $existing = $this->scheduleId ? RecurringInvoice::query()->whereIn('company_id', auth()->user()->accessibleCompanyIds(Modules::SALES))->findOrFail($this->scheduleId) : null;
         $company = $existing?->company ?? $this->contextCompany();
         if (! $company) {
             $this->addError('company', __('The company in the header has changed or is inactive. Reload the page and try again.'));

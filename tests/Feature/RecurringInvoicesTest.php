@@ -114,6 +114,15 @@ class RecurringInvoicesTest extends TestCase
         $this->assertSame(3, Document::query()->where('recurring_invoice_id', $schedule->id)->count());
     }
 
+    public function test_a_run_skips_companies_that_switched_sales_off(): void
+    {
+        $schedule = $this->schedule($this->sourceInvoice());
+        $this->company->update(['sales_enabled' => false]);
+
+        $this->assertSame(0, $this->service()->run(CarbonImmutable::parse('2026-09-15'))['created']);
+        $this->assertSame('2026-07-01', $schedule->fresh()->next_run_on->toDateString());
+    }
+
     public function test_a_period_generated_before_is_never_generated_again(): void
     {
         $schedule = $this->schedule($this->sourceInvoice());

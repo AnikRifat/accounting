@@ -3,14 +3,21 @@
 namespace Tests\Feature;
 
 use App\Enums\DocumentType;
+use App\Livewire\Admin\Companies\Form as CompanyForm;
 use App\Models\Company;
+use App\Models\Lead;
 use App\Models\Party;
 use App\Models\User;
 use App\Services\DocumentService;
+use App\Services\LeadMailer;
+use App\Support\CompanyContext;
 use App\Support\Modules;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\Feature\Concerns\MakesDocuments;
 use Tests\TestCase;
 
@@ -93,6 +100,61 @@ class ModuleSwitchTest extends TestCase
         $this->get($url.'/pdf')->assertNotFound();
         $this->assertFalse($this->recurringInvoiceJob()->filtersPass($this->app));
         $this->actingAs($this->owner)->get('/admin/entries')->assertOk()->assertDontSee(route('admin.sales.documents.show', $invoice));
+    }
+
+    public function test_a_company_switches_modules_on_its_edit_page_and_only_switchable_modules_show(): void
+    {
+        $company = Company::factory()->create();
+        $this->actingAs($this->owner);
+
+        Livewire::test(CompanyForm::class, ['company' => $company])->assertSet('crmEnabled', true)->assertSee(__('Leads, calls, emails and follow-ups.'))
+            ->set('crmEnabled', false)->call('save')->assertHasNoErrors();
+        $this->assertSame([true, false], [$company->fresh()->sales_enabled, $company->fresh()->crm_enabled]);
+
+        config(['modules.crm' => false]);
+        Livewire::test(CompanyForm::class, ['company' => $company->fresh()])->assertDontSee(__('Leads, calls, emails and follow-ups.'))->call('save');
+        $this->assertFalse($company->fresh()->crm_enabled);
+    }
+
+    public function test_crm_switched_off_for_a_company_hides_it_and_its_leads_inside_crm_only(): void
+    {
+        [$crm, $books] = [Company::factory()->create(['name' => 'Uses CRM']), Company::factory()->create(['name' => 'Books Only', 'crm_enabled' => false])];
+        $hidden = Lead::factory()->for($books)->create(['name' => 'Hidden Lead']);
+        Lead::factory()->for($crm)->create(['name' => 'Shown Lead']);
+        $this->actingAs($this->owner);
+
+        $this->get('/admin/crm/leads')->assertOk()->assertSee('Shown Lead')->assertDontSee('Hidden Lead')->assertDontSee('Books Only');
+        $this->get(route('admin.crm.leads.show', $hidden))->assertNotFound();
+        // The header company is outside CRM, so the only CRM company is in scope instead.
+        $this->withSession([CompanyContext::SESSION_KEY => $books->id])->get('/admin/crm/leads/create')->assertOk()->assertSee('Uses CRM')->assertDontSee('Books Only');
+        $this->assertThrows(fn () => app(LeadMailer::class)->send($hidden, 'a@example.test', null, 'Hi', 'Hi', $this->owner), ModelNotFoundException::class);
+        $this->get('/admin/entries')->assertOk()->assertSee('Books Only');
+    }
+
+    public function test_a_module_none_of_the_users_companies_use_leaves_the_header(): void
+    {
+        $company = Company::factory()->create(['crm_enabled' => false]);
+        $clerk = User::factory()->create(['role' => 'administrator', 'denied_permissions' => ['companies.all']]);
+        $clerk->companies()->attach($company);
+
+        $this->assertArrayNotHasKey(Modules::CRM, Modules::available($this->owner));
+        Company::factory()->create();
+        $this->assertArrayHasKey(Modules::CRM, Modules::available($this->owner));
+        $this->assertSame([Modules::ACCOUNTING, Modules::SALES, Modules::ORGANISATION], array_keys(Modules::available($clerk)));
+    }
+
+    public function test_sales_switched_off_for_a_company_refuses_documents_and_closes_its_links(): void
+    {
+        $company = Company::factory()->create();
+        $customer = Party::factory()->for($company)->create();
+        $invoice = $this->issued($company, DocumentType::Invoice, $customer, [['Design work', 1, 50_000]]);
+        $url = app(DocumentService::class)->share($invoice, null, $this->owner);
+        $company->update(['sales_enabled' => false]);
+
+        $this->get($url)->assertNotFound();
+        $this->assertThrows(fn () => $this->issued($company, DocumentType::Invoice, $customer, [['More work', 1, 10_000]]), AuthorizationException::class);
+        $this->actingAs($this->owner)->get(route('admin.sales.documents.show', $invoice))->assertNotFound();
+        $this->get('/admin/entries')->assertOk()->assertDontSee(route('admin.sales.documents.show', $invoice));
     }
 
     private function recurringInvoiceJob(): Event

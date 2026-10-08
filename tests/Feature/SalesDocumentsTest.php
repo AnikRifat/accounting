@@ -9,6 +9,7 @@ use App\Livewire\Admin\Sales\Dashboard;
 use App\Livewire\Admin\Sales\Documents\Form;
 use App\Livewire\Admin\Sales\Documents\Index;
 use App\Livewire\Admin\Sales\Documents\Show;
+use App\Mail\DocumentMail;
 use App\Models\Company;
 use App\Models\Document;
 use App\Models\DocumentPayment;
@@ -352,6 +353,16 @@ class SalesDocumentsTest extends TestCase
 
         $component->call('openEmail')->call('sendEmail')->assertHasErrors('emailTo')->assertSet('emailing', true)
             ->assertSee(__('The email was not sent. Check the mail settings or try again later.'));
+    }
+
+    public function test_documents_are_emailed_from_the_company_sender(): void
+    {
+        $invoice = $this->invoice();
+        $mail = fn (): DocumentMail => new DocumentMail($invoice->fresh('company'), 'Invoice', 'Hi', null, '%PDF', 'invoice.pdf');
+        $this->assertNull($mail()->envelope()->from);
+
+        $this->acme->update(['mail_from_address' => 'billing@acme.test']);
+        $this->assertTrue($mail()->hasFrom('billing@acme.test', 'Acme Ltd'));
     }
 
     public function test_drafts_are_issued_or_deleted_from_the_show_page(): void

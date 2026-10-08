@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\CallType;
 use App\Support\Crm;
+use App\Support\Modules;
 use Database\Factories\LeadCallFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -62,7 +63,7 @@ class LeadCall extends Model
      */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('lead_calls.company_id', $user->accessibleCompanyIds());
+        $query->whereIn('lead_calls.company_id', $user->accessibleCompanyIds(Modules::CRM));
         if (! $user->hasPermission('crm.leads.all')) {
             $query->where(fn (Builder $calls) => $calls->where('lead_calls.user_id', $user->id)
                 ->orWhereHas('lead', fn (Builder $lead) => $lead->where('assigned_to', $user->id)));

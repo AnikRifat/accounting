@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\DocumentMail;
 use App\Models\Document;
 use App\Models\User;
+use App\Support\Modules;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Support\Facades\Gate;
@@ -32,7 +33,7 @@ class DocumentMailer
     public function send(Document $document, string $to, ?string $cc, string $subject, string $message, User $actor): void
     {
         Gate::forUser($actor)->authorize('sales.send');
-        if (! $actor->canAccessCompany($document->company_id)) {
+        if (! $actor->canAccessCompany($document->company_id, Modules::SALES)) {
             throw new AuthorizationException(__('You do not have access to this company.'));
         }
         $document = Document::query()->with('company')->findOrFail($document->id);

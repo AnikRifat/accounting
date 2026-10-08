@@ -9,6 +9,7 @@ use App\Models\Item;
 use App\Models\ItemCategory;
 use App\Support\CompanyContext;
 use App\Support\DocumentMath;
+use App\Support\Modules;
 use App\Support\Money;
 use Closure;
 use Illuminate\Contracts\View\View;
@@ -52,7 +53,7 @@ class Form extends Component
         Gate::authorize('sales.setup');
         $this->itemId = $item?->exists ? $item->id : null;
         if ($this->itemId) {
-            abort_unless(auth()->user()->canAccessCompany($item->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($item->company_id, Modules::SALES), 404);
             $this->companyId = $item->company_id;
             $this->name = $item->name;
             $this->categoryId = (string) $item->item_category_id;

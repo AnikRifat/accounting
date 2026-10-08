@@ -59,7 +59,10 @@ session timezone `+06:00`.
   the first module they can open. `config/modules.php` (`MODULE_ACCOUNTING`, `MODULE_SALES`, `MODULE_CRM`)
   says which modules an install includes; Settings switches the included ones on and off (`Modules::enabled()`).
   A disabled module leaves the header, and its routes, Livewire updates, share links and scheduled jobs 404 or
-  stop. Sales needs Accounting; Organisation is always on.
+  stop. Sales needs Accounting; Organisation is always on. A company can also switch Sales or CRM off for itself
+  (`companies.sales_enabled` / `crm_enabled`, `Company::MODULE_COLUMNS`, on its edit page): inside that module it
+  leaves the header switcher (`CompanyContext`), and Sales/CRM models' `visibleTo()` and service checks use
+  `accessibleCompanyIds($module)` / `canAccessCompany($id, $module)`. Records are kept, never deleted.
 - **Settings** (`/admin/settings`, one tab per module) are defined only in `App\Support\Configuration::sections()`
   (type, default, rules) and read with `Configuration::get('module.key')`. A row in `application_settings` exists
   only while a value differs from its default. A new setting must be read somewhere; no switches that do nothing.

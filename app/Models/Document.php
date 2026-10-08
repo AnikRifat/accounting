@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
 use App\Enums\DueStatus;
+use App\Support\Modules;
 use Database\Factories\DocumentFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -158,7 +159,7 @@ class Document extends Model
     /** Documents of companies the user may access. */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('company_id', $user->accessibleCompanyIds());
+        $query->whereIn('company_id', $user->accessibleCompanyIds(Modules::SALES));
     }
 
     /** Adds `balance` (paisa): the ledger's outstanding for a posted document, else total − payments − issued notes. */

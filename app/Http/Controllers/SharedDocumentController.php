@@ -47,7 +47,7 @@ class SharedDocumentController extends Controller
     private function shared(string $token): Document
     {
         $document = Document::query()->where('share_token', $token)->first();
-        abort_if(! Modules::enabled(Modules::SALES) || $document === null || $document->isDraft() || $document->isVoid()
+        abort_if(! Modules::enabled(Modules::SALES) || $document === null || ! $document->company->sales_enabled || $document->isDraft() || $document->isVoid()
             || ($document->share_expires_at !== null && $document->share_expires_at->isPast()), 404);
 
         return $document;

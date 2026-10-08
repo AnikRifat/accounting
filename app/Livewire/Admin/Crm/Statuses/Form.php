@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\CrmStatus;
 use App\Support\CompanyContext;
 use App\Support\Crm;
+use App\Support\Modules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -42,7 +43,7 @@ class Form extends Component
         Gate::authorize('crm.setup.manage');
         $this->statusId = $status?->exists ? $status->id : null;
         if ($this->statusId) {
-            abort_unless(auth()->user()->canAccessCompany($status->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($status->company_id, Modules::CRM), 404);
             $this->companyId = $status->company_id;
             [$this->type, $this->name, $this->tone, $this->position, $this->isClosed, $this->isActive]
                 = [$status->type->value, $status->name, $status->tone, (string) $status->position, $status->is_closed, $status->is_active];

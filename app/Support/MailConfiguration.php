@@ -2,10 +2,14 @@
 
 namespace App\Support;
 
+use App\Models\Company;
+use Illuminate\Mail\Mailables\Address;
+
 /**
  * Puts the Mail settings into Laravel's mail config. AppServiceProvider runs apply() once the mail manager is resolved,
  * before it builds a mailer, so every email (documents, test emails) goes out the way Settings > Mail says. With
- * "Server configuration" the MAIL_ values of the environment stay in charge; a filled sender applies to both.
+ * "Server configuration" the MAIL_ values of the environment stay in charge; a filled sender applies to both. A company
+ * can set its own sender for its lead and document emails (senderFor()).
  */
 final class MailConfiguration
 {
@@ -25,6 +29,20 @@ final class MailConfiguration
         if (($address = Configuration::get('mail.from_address')) !== '') {
             config(['mail.from.address' => $address, 'mail.from.name' => Configuration::get('mail.from_name') ?: Configuration::get('app_name')]);
         }
+    }
+
+    /**
+     * The company's own sender, or null to use the default one. A missing address falls back to the default address
+     * and a missing name to the company name.
+     */
+    public static function senderFor(Company $company): ?Address
+    {
+        if (! $company->mail_from_address && ! $company->mail_from_name) {
+            return null;
+        }
+        app('mail.manager');
+
+        return new Address($company->mail_from_address ?: (string) config('mail.from.address'), $company->mail_from_name ?: $company->name);
     }
 
     /**

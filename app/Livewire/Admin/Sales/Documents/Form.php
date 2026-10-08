@@ -19,6 +19,7 @@ use App\Services\LedgerService;
 use App\Support\CompanyContext;
 use App\Support\Configuration;
 use App\Support\DocumentMath;
+use App\Support\Modules;
 use App\Support\Money;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -565,7 +566,7 @@ class Form extends Component
 
     private function visibleCompanyId(): ?int
     {
-        return $this->companyId !== null && auth()->user()->canAccessCompany($this->companyId) ? $this->companyId : null;
+        return $this->companyId !== null && auth()->user()->canAccessCompany($this->companyId, Modules::SALES) ? $this->companyId : null;
     }
 
     /**
@@ -579,7 +580,7 @@ class Form extends Component
 
             return null;
         }
-        $company = Company::visibleTo(auth()->user())->find($this->companyId);
+        $company = Company::visibleTo(auth()->user())->usingModule(Modules::SALES)->find($this->companyId);
         if (! $company?->is_active) {
             $this->addError('document', __('This company is inactive or no longer available and does not accept new documents.'));
 

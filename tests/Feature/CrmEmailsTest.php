@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\Lead;
 use App\Models\LeadEmail;
 use App\Models\User;
+use App\Services\LeadMailer;
 use App\Services\RecordDeletion;
 use App\Support\CompanyContext;
 use App\Support\Configuration;
@@ -59,6 +60,22 @@ class CrmEmailsTest extends TestCase
         $this->assertSame($before, [$lead->fresh()->crm_status_id, $lead->fresh()->next_call_on->toDateString()]);
 
         $this->get(route('admin.crm.leads.show', $lead))->assertOk()->assertSee('Your quotation')->assertSee(route('admin.crm.emails.create', $lead));
+    }
+
+    public function test_lead_emails_go_out_from_the_company_sender_or_the_default_one(): void
+    {
+        Mail::fake();
+        $own = Company::factory()->create(['name' => 'All Weather Co', 'mail_from_address' => 'hello@awc.test', 'mail_from_name' => 'AWC Sales']);
+        $nameOnly = Company::factory()->create(['name' => 'Beta Ltd', 'mail_from_name' => 'Beta Team']);
+        $plain = Company::factory()->create();
+        $this->actingAs($rep = $this->userFor('owner'));
+        foreach ([$own, $nameOnly, $plain] as $company) {
+            app(LeadMailer::class)->send(Lead::factory()->for($company)->create(), 'lead@example.test', null, 'Hello '.$company->id, 'Hi', $rep);
+        }
+
+        Mail::assertSent(LeadMail::class, fn (LeadMail $mail): bool => $mail->hasSubject('Hello '.$own->id) && $mail->hasFrom('hello@awc.test', 'AWC Sales'));
+        Mail::assertSent(LeadMail::class, fn (LeadMail $mail): bool => $mail->hasSubject('Hello '.$nameOnly->id) && $mail->hasFrom('crm@example.test', 'Beta Team'));
+        Mail::assertSent(LeadMail::class, fn (LeadMail $mail): bool => $mail->hasSubject('Hello '.$plain->id) && $mail->envelope()->from === null);
     }
 
     public function test_a_refused_send_is_logged_as_failed_and_kept_on_the_form(): void

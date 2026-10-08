@@ -8,7 +8,8 @@ use Livewire\Livewire;
 
 /**
  * The company chosen in the header switcher: one visible company, or null for "All companies".
- * Every company-scoped page reads its scope from here instead of offering its own company filter.
+ * Every company-scoped page reads its scope from here instead of offering its own company filter. Inside Sales or CRM
+ * only the companies that use the module are offered (on Livewire updates RememberModule has set the page's module).
  */
 class CompanyContext
 {
@@ -17,12 +18,13 @@ class CompanyContext
     /** @var Collection<int, Company>|null */
     private ?Collection $visible = null;
 
-    /** @return Collection<int, Company> Companies the signed-in user can see, by name. */
+    /** @return Collection<int, Company> Companies the signed-in user can see in the current module, by name. */
     public function options(): Collection
     {
         $user = auth()->user();
+        $module = Modules::forRoute(request()->route()?->getName()) ?? session(Modules::SESSION_KEY);
 
-        return $this->visible ??= $user ? Company::visibleTo($user)->orderBy('name')->get() : collect();
+        return $this->visible ??= $user ? Company::visibleTo($user)->usingModule($module)->orderBy('name')->get() : collect();
     }
 
     /** The selected company id, or null for all. A user who can see exactly one company is pinned to it. */

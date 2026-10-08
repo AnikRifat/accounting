@@ -99,13 +99,14 @@ class User extends Authenticatable
     }
 
     /** @return list<int> */
-    public function accessibleCompanyIds(): array
+    public function accessibleCompanyIds(?string $module = null): array
     {
-        return Company::visibleTo($this)->pluck('id')->all();
+        return Company::visibleTo($this)->usingModule($module)->pluck('id')->all();
     }
 
-    public function canAccessCompany(int $companyId): bool
+    /** With a module, the company must also use it (Company::MODULE_COLUMNS). */
+    public function canAccessCompany(int $companyId, ?string $module = null): bool
     {
-        return Company::visibleTo($this)->whereKey($companyId)->exists();
+        return Company::visibleTo($this)->usingModule($module)->whereKey($companyId)->exists();
     }
 }

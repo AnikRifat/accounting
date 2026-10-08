@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Modules;
 use Database\Factories\LeadEmailFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -54,7 +55,7 @@ class LeadEmail extends Model
      */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('lead_emails.company_id', $user->accessibleCompanyIds());
+        $query->whereIn('lead_emails.company_id', $user->accessibleCompanyIds(Modules::CRM));
         if (! $user->hasPermission('crm.leads.all')) {
             $query->where(fn (Builder $emails) => $emails->where('lead_emails.user_id', $user->id)
                 ->orWhereHas('lead', fn (Builder $lead) => $lead->where('assigned_to', $user->id)));

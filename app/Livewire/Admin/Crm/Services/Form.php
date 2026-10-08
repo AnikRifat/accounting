@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Crm\Services;
 use App\Models\Company;
 use App\Models\CrmService;
 use App\Support\CompanyContext;
+use App\Support\Modules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -31,7 +32,7 @@ class Form extends Component
         Gate::authorize('crm.setup.manage');
         $this->serviceId = $service?->exists ? $service->id : null;
         if ($this->serviceId) {
-            abort_unless(auth()->user()->canAccessCompany($service->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($service->company_id, Modules::CRM), 404);
             [$this->companyId, $this->name, $this->isActive] = [$service->company_id, $service->name, $service->is_active];
         } else {
             $this->companyId = app(CompanyContext::class)->company()?->id;

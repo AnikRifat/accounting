@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CrmStatusType;
+use App\Support\Modules;
 use Database\Factories\CrmStatusFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -45,7 +46,7 @@ class CrmStatus extends Model
     /** Statuses of the companies the user may access. */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('company_id', $user->accessibleCompanyIds());
+        $query->whereIn('company_id', $user->accessibleCompanyIds(Modules::CRM));
     }
 
     /** How many leads and calls point at this status; a used status can only be deactivated. */

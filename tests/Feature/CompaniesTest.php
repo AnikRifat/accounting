@@ -50,6 +50,20 @@ class CompaniesTest extends TestCase
         $this->assertFalse($company->fresh()->is_active);
     }
 
+    public function test_a_company_keeps_its_own_email_sender(): void
+    {
+        $company = Company::factory()->create(['code' => 'AWC']);
+        $this->actingAs(User::factory()->create(['role' => 'owner']));
+
+        Livewire::test(Form::class, ['company' => $company])->set('mailFromAddress', 'not-an-address')->call('save')->assertHasErrors(['mailFromAddress' => 'email'])
+            ->set('mailFromAddress', ' hello@awc.test ')->set('mailFromName', 'All Weather Co')->call('save')->assertHasNoErrors();
+        $this->assertSame(['hello@awc.test', 'All Weather Co'], [$company->fresh()->mail_from_address, $company->fresh()->mail_from_name]);
+
+        Livewire::test(Form::class, ['company' => $company->fresh()])->assertSet('mailFromAddress', 'hello@awc.test')
+            ->set('mailFromAddress', '')->set('mailFromName', ' ')->call('save')->assertHasNoErrors();
+        $this->assertSame([null, null], [$company->fresh()->mail_from_address, $company->fresh()->mail_from_name]);
+    }
+
     public function test_company_list_and_edit_are_limited_to_assigned_companies(): void
     {
         RolePermission::factory()->create(['role' => 'company_editor', 'permissions' => ['admin.access', 'companies.view', 'companies.update']]);

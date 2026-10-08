@@ -9,6 +9,7 @@ use App\Models\Company;
 use App\Models\Document;
 use App\Models\RecurringInvoice;
 use App\Models\User;
+use App\Support\Modules;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -44,7 +45,7 @@ class RecurringInvoices
     public function save(?RecurringInvoice $schedule, Company $company, array $data, User $actor): RecurringInvoice
     {
         Gate::forUser($actor)->authorize('sales.update');
-        if (! $actor->canAccessCompany($company->id)) {
+        if (! $actor->canAccessCompany($company->id, Modules::SALES)) {
             throw new AuthorizationException(__('You do not have access to this company.'));
         }
         if ($schedule && $schedule->company_id !== $company->id) {
@@ -124,7 +125,8 @@ class RecurringInvoices
     }
 
     /**
-     * Generates the drafts of every active schedule due on or before $today, optionally only for some companies.
+     * Generates the drafts of every active schedule due on or before $today in companies that use Sales, optionally only
+     * for some companies.
      *
      * @param  list<int>|null  $companyIds
      * @return array{created: int, documents: list<int>, skipped: list<array{schedule: string, reason: string}>}
@@ -134,6 +136,7 @@ class RecurringInvoices
         $today = CarbonImmutable::parse(($today ?? CarbonImmutable::today())->toDateString());
         $summary = ['created' => 0, 'documents' => [], 'skipped' => []];
         $due = RecurringInvoice::query()->where('is_active', true)->whereNotNull('next_run_on')->where('next_run_on', '<=', $today->toDateString())
+            ->whereIn('company_id', Company::query()->usingModule(Modules::SALES)->select('id'))
             ->when($companyIds !== null, fn ($query) => $query->whereIn('company_id', $companyIds))
             ->orderBy('next_run_on')->orderBy('id')->pluck('name', 'id');
 
@@ -177,7 +180,7 @@ class RecurringInvoices
         if ($creator === null || ! $creator->is_active) {
             throw ValidationException::withMessages(['created_by' => __('Its creator is inactive.')]);
         }
-        if (! $creator->canAccessCompany($company->id)) {
+        if (! $creator->canAccessCompany($company->id, Modules::SALES)) {
             throw new AuthorizationException;
         }
         $source = Document::query()->with('lines')->findOrFail($schedule->source_id);

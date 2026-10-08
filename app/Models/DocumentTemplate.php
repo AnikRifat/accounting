@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\HasMedia;
 use App\Enums\DocumentType;
+use App\Support\Modules;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -97,7 +98,7 @@ class DocumentTemplate extends Model
     /** Templates of the companies the user may access. */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('company_id', $user->accessibleCompanyIds());
+        $query->whereIn('company_id', $user->accessibleCompanyIds(Modules::SALES));
     }
 
     /**

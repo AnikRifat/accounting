@@ -18,6 +18,7 @@ use App\Models\Party;
 use App\Models\RecurringInvoice;
 use App\Models\User;
 use App\Support\DocumentMath;
+use App\Support\Modules;
 use App\Support\Money;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
@@ -623,7 +624,7 @@ class DocumentService
     private function authorize(User $actor, string $ability, int $companyId): void
     {
         Gate::forUser($actor)->authorize($ability);
-        if (! $actor->canAccessCompany($companyId)) {
+        if (! $actor->canAccessCompany($companyId, Modules::SALES)) {
             throw new AuthorizationException(__('You do not have access to this company.'));
         }
     }

@@ -9,6 +9,7 @@ use App\Models\Media;
 use App\Models\User;
 use App\Services\MediaService;
 use App\Support\CompanyContext;
+use App\Support\Modules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -80,7 +81,7 @@ class Form extends Component
     {
         Gate::authorize('sales.setup');
         if ($template?->exists) {
-            abort_unless(auth()->user()->canAccessCompany($template->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($template->company_id, Modules::SALES), 404);
             $this->templateId = $template->id;
             $this->companyId = $template->company_id;
             $this->fill([

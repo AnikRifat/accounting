@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\HasMedia;
 use App\Concerns\HasPhoto;
 use App\Support\Crm;
+use App\Support\Modules;
 use Database\Factories\LeadFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -91,7 +92,7 @@ class Lead extends Model
      */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('leads.company_id', $user->accessibleCompanyIds());
+        $query->whereIn('leads.company_id', $user->accessibleCompanyIds(Modules::CRM));
         if (! $user->hasPermission('crm.leads.all')) {
             $query->where('leads.assigned_to', $user->id);
         }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Modules;
 use Database\Factories\CrmSourceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -37,6 +38,6 @@ class CrmSource extends Model
     /** Services of the companies the user may access. */
     public function scopeVisibleTo(Builder $query, User $user): void
     {
-        $query->whereIn('company_id', $user->accessibleCompanyIds());
+        $query->whereIn('company_id', $user->accessibleCompanyIds(Modules::CRM));
     }
 }

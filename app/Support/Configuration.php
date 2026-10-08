@@ -93,8 +93,8 @@ final class Configuration
                 ],
                 __('Modules') => [
                     'modules.accounting' => $module(Modules::ACCOUNTING, __('Accounting'), __('Transactions, parties, payment methods and reports. Sales needs it.')),
-                    'modules.sales' => $module(Modules::SALES, __('Sales'), __('Quotations, invoices, bills, recurring invoices and sales reports.')),
-                    'modules.crm' => $module(Modules::CRM, __('CRM'), __('Leads, calls, follow-ups and CRM reports.')),
+                    'modules.sales' => $module(Modules::SALES, __('Sales'), __('Quotations, invoices, bills, recurring invoices and sales reports. A company can switch it off on its edit page.')),
+                    'modules.crm' => $module(Modules::CRM, __('CRM'), __('Leads, calls, follow-ups and CRM reports. A company can switch it off on its edit page.')),
                 ],
                 __('Lists and printing') => [
                     'general.rows_per_page' => ['type' => 'select', 'cast' => 'int', 'label' => __('Rows per page'), 'default' => 25,
@@ -122,7 +122,7 @@ final class Configuration
                 ],
                 __('Sender') => [
                     'mail.from_address' => ['type' => 'email', 'label' => __('From address'), 'default' => '', 'rules' => [$smtp, 'nullable', 'email', 'max:255'],
-                        'help' => __('Most SMTP servers accept only the address you sign in with.')],
+                        'help' => __('Most SMTP servers accept only the address you sign in with. A company can set its own sender on its edit page.')],
                     'mail.from_name' => ['type' => 'text', 'label' => __('From name'), 'default' => '', 'rules' => ['nullable', 'string', 'max:80'],
                         'help' => __('Leave empty to use the application name.')],
                 ],

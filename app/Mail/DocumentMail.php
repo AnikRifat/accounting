@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Document;
+use App\Support\MailConfiguration;
 use Illuminate\Mail\Attachment;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -24,7 +25,8 @@ class DocumentMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: $this->mailSubject, replyTo: $this->replyAddress ? [$this->replyAddress] : []);
+        return new Envelope(from: MailConfiguration::senderFor($this->document->company), subject: $this->mailSubject,
+            replyTo: $this->replyAddress ? [$this->replyAddress] : []);
     }
 
     public function content(): Content

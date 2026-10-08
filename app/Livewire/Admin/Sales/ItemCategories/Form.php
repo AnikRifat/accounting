@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Sales\ItemCategories;
 use App\Models\Company;
 use App\Models\ItemCategory;
 use App\Support\CompanyContext;
+use App\Support\Modules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
@@ -32,7 +33,7 @@ class Form extends Component
         Gate::authorize('sales.setup');
         $this->categoryId = $itemCategory?->exists ? $itemCategory->id : null;
         if ($this->categoryId) {
-            abort_unless(auth()->user()->canAccessCompany($itemCategory->company_id), 404);
+            abort_unless(auth()->user()->canAccessCompany($itemCategory->company_id, Modules::SALES), 404);
             [$this->companyId, $this->name, $this->isActive] = [$itemCategory->company_id, $itemCategory->name, $itemCategory->is_active];
         } else {
             $this->companyId = app(CompanyContext::class)->company()?->id;

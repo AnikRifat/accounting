@@ -11,6 +11,19 @@
             </div>
             <x-form.checkbox name="isActive" :label="__('Company is active')" wire:model="isActive" />
         </x-card>
+        @if($switchableModules)
+            <x-card :title="__('Modules')" :description="__('A module switched off here hides this company inside it. Its records are kept and come back when it is switched on again.')">
+                @foreach($switchableModules as $property => [$label, $help])
+                    <x-form.checkbox :name="$property" :label="$label" :help="$help" wire:model="{{ $property }}" />
+                @endforeach
+            </x-card>
+        @endif
+        <x-card :title="__('Email sender')" :description="__('Lead and document emails from this company go out with this sender. Leave both empty to use the sender in Settings > Mail.')">
+            <div class="form-grid">
+                <x-form.input name="mailFromAddress" :label="__('From address')" type="email" wire:model="mailFromAddress" maxlength="255" autocomplete="off" :help="__('Most SMTP servers accept only the address you sign in with, or addresses on the same domain.')" />
+                <x-form.input name="mailFromName" :label="__('From name')" wire:model="mailFromName" maxlength="80" :help="__('Leave empty to use the company name.')" />
+            </div>
+        </x-card>
         <x-form.actions :submit="__('Save company')" :cancel="route('admin.companies.index')" />
     </form>
 </div>
